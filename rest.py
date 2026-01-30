@@ -4,6 +4,7 @@ from sqlalchemy import select
 
 from db import get_db
 from models import Item
+from models import User
 
 router = APIRouter(prefix="/api")
 
