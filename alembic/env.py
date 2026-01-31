@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+from dotenv import load_dotenv
+load_dotenv()
+
+import os
+
 import sys
 from pathlib import Path
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import create_engine, engine_from_config, pool
 
 # Alembic config object
 config = context.config
@@ -27,7 +32,8 @@ target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:
-    url = config.get_main_option("sqlalchemy.url")
+    # url = config.get_main_option("sqlalchemy.url")
+    url = os.getenv("DATABASE_URL")
     context.configure(
         url=url,
         target_metadata=target_metadata,   # ✅ REQUIRED
@@ -41,9 +47,8 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section) or {},
-        prefix="sqlalchemy.",
+    connectable = create_engine(
+        os.getenv("DATABASE_URL"),
         poolclass=pool.NullPool,
         future=True,
     )

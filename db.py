@@ -9,7 +9,7 @@ load_dotenv()  # loads .env from the current working directory
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
-    raise RuntimeError("DATABASE_URL is notnh set. Create a .env file in the project root or set the env var.")
+    raise RuntimeError("DATABASE_URL is not set. Create a .env file in the project root or set the env var.")
 
 engine = create_async_engine(DATABASE_URL, echo=False)
 
