@@ -5,9 +5,9 @@ Setup(in order):
 
 python -m venv .venv // creates .venv folder
 
-create new .env file in the root of the project and insert:
-DATABASE_URL = postgresql+psycopg://postgres:PASSWORD@localhost:5432/sana //defines url for database in posgress server, insert your chosen password in place of PASSWORD
-PSYCOPG_PREFER_PQ_BINARY=1 // added to try and fix some issues I had with interacting with postgreSQL (not sure if required feel free to test)
+create new .env file in the root of the project and insert:  
+DATABASE_URL = postgresql+psycopg://postgres:PASSWORD@localhost:5432/sana //Replace PASSWORD with the password you want to use  
+PSYCOPG_PREFER_PQ_BINARY=1 
 
 pip install -r requirements.txt // installs all required dependencies
 
