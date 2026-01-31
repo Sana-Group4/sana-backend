@@ -27,7 +27,7 @@ sys.path.insert(0, str(ROOT))
 from db import Base
 import models  # noqa: F401
 
-# ✅ This must NOT be None
+# Metadata is not none
 target_metadata = Base.metadata
 
 
@@ -36,7 +36,7 @@ def run_migrations_offline() -> None:
     url = os.getenv("DATABASE_URL")
     context.configure(
         url=url,
-        target_metadata=target_metadata,   # ✅ REQUIRED
+        target_metadata=target_metadata, 
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
@@ -56,7 +56,7 @@ def run_migrations_online() -> None:
     with connectable.connect() as connection:
         context.configure(
             connection=connection,
-            target_metadata=target_metadata,  # ✅ REQUIRED
+            target_metadata=target_metadata, 
             compare_type=True,
         )
 
