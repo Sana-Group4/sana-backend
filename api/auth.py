@@ -42,7 +42,7 @@ class TokenData(BaseModel):
 
 password_hash = PasswordHash.recommended()
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 def verify_password(password, hashed_password):
     return password_hash.verify(password, hashed_password)
@@ -55,7 +55,7 @@ async def get_user(db: AsyncSession, username: str) -> User | None:
     return result.scalars().first()
 
 #inserts data into table and returns the new data stored in the database (including defaults)
-async def add_User(db:AsyncSession, user_data: UserCreate) -> Token:
+async def add_User(db:AsyncSession, user_data: UserCreate) -> User:
     hashed_pass = get_hashed_pass(user_data.password)
     user = User(
         username = user_data.username,
@@ -89,7 +89,7 @@ def create_access_token(data: dict, expire_delta: timedelta | None = None):
     return encoded_jwt
 
 #gets user from jwt token
-async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)], db:AsyncSession = Depends(get_db)):
+async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)], db: AsyncSession = Depends(get_db)):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
