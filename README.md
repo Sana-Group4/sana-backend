@@ -7,7 +7,10 @@ python -m venv .venv // creates .venv folder
 
 create new .env file in the root of the project and insert:  
 DATABASE_URL = postgresql+psycopg://postgres:PASSWORD@localhost:5432/sana //Replace PASSWORD with the password you want to use  
-PSYCOPG_PREFER_PQ_BINARY=1 
+PSYCOPG_PREFER_PQ_BINARY=1  
+SECRET_KEY = generatedKey // gerate key via "openssl rand -hex 32"
+ALGORITHM = HS256  
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 pip install -r requirements.txt // installs all required dependencies
 
@@ -18,7 +21,7 @@ alembic upgrade head // creates/updates database using newest migration version
 
 (Make sure postgreSQL is running to use the database)
 To run:
-.\.venv\Scripts\Activate.ps1 // turn on venv environment
-uvicorn main:app --reload // TO RUN IN TERMINAL
-http://127.0.0.1:8000/docs // ACCESS TO UI
+.\.venv\Scripts\Activate.ps1 // turn on venv environment  
+uvicorn main:app --reload // TO RUN IN TERMINAL  
+http://127.0.0.1:8000/docs // ACCESS TO UI  
 Ctrl + C to stop program
