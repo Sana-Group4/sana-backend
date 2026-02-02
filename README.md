@@ -1,5 +1,5 @@
-# backend
-backend for app
+# Backend
+<!-- backend for app
 
 Setup(in order):
 
@@ -24,14 +24,30 @@ To run:
 .\.venv\Scripts\Activate.ps1 // turn on venv environment  
 uvicorn main:app --reload // TO RUN IN TERMINAL  
 http://127.0.0.1:8000/docs // ACCESS TO UI  
-Ctrl + C to stop program
+Ctrl + C to stop program -->
 
 ## Running locally with Docker
 
 1. **Start PostgreSQL**: `docker-compose up -d`
-2. **Create `.env` file or copy from example**: `cp .env.example .env` 
-3. **Create and activate python virtual environment (not required but recommended):** `python3 -m venv .venv && source .venv/bin/activate`
-3. **Install dependencies**: `pip install -r requirements.txt`
-4. **Run the app**: `uvicorn main:app --reload`
-5. **Access the API**: http://localhost:8000/docs
+
+2. **Create `.env` file or copy from example**:
+   - Linux/Mac: `cp .env.example .env`
+   - Windows: `copy .env.example .env`
+
+3. **Generate SECRET_KEY**: `openssl rand -hex 32` and add the output to your `.env` file
+
+4. **Create and activate python virtual environment**:
+   - Linux/Mac: `python3 -m venv .venv && source .venv/bin/activate`
+   - Windows (CMD): `python -m venv .venv && .venv\Scripts\activate.bat`
+   - Windows (PowerShell): `python -m venv .venv && .venv\Scripts\Activate.ps1`
+
+5. **Install dependencies**: `pip install -r requirements.txt`
+
+6. **Run migrations**: `alembic upgrade head`
+
+7. **Run the app**: `uvicorn main:app --reload`
+
+8. **Access the API**: http://localhost:8000/docs
+
+
 
