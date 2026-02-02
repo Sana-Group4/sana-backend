@@ -12,8 +12,12 @@ from pwdlib import PasswordHash
 from pydantic import BaseModel, EmailStr
 
 import os
+from dotenv import load_dotenv
 from db import get_db
 from models import User
+
+# Load environment variables
+load_dotenv()
 
 router = APIRouter(prefix="/auth")
 
@@ -22,7 +26,13 @@ router = APIRouter(prefix="/auth")
 # openssl rand -hex 32 
 SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = os.getenv("ALGORITHM")
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES"))
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+
+# Validate required variables
+if not SECRET_KEY:
+    raise RuntimeError("SECRET_KEY is not set in .env file")
+if not ALGORITHM:
+    raise RuntimeError("ALGORITHM is not set in .env file")
 
 #data required for user registration
 class UserCreate(BaseModel):

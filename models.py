@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import String
+from sqlalchemy import String, ForeignKey
 from db import Base
 
 class Item(Base):
@@ -17,3 +17,11 @@ class User(Base):
     lastName: Mapped[str] = mapped_column(String(50), unique=False, nullable=False)
     email: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     hashedPass: Mapped[str] = mapped_column(String(255), unique=False, nullable=False)
+
+class Activity(Base):
+    __tablename__ = "activities"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    description: Mapped[str] = mapped_column(String(500), nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
