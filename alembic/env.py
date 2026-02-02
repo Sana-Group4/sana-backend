@@ -31,9 +31,14 @@ import models  # noqa: F401
 target_metadata = Base.metadata
 
 
+def get_sync_url(async_url: str) -> str:
+    """Convert async database URL to sync for Alembic."""
+    return async_url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
+
+
 def run_migrations_offline() -> None:
     # url = config.get_main_option("sqlalchemy.url")
-    url = os.getenv("DATABASE_URL")
+    url = get_sync_url(os.getenv("DATABASE_URL"))
     context.configure(
         url=url,
         target_metadata=target_metadata, 
@@ -48,7 +53,7 @@ def run_migrations_offline() -> None:
 
 def run_migrations_online() -> None:
     connectable = create_engine(
-        os.getenv("DATABASE_URL"),
+        get_sync_url(os.getenv("DATABASE_URL")),
         poolclass=pool.NullPool,
         future=True,
     )
