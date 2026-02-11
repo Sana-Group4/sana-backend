@@ -80,7 +80,9 @@ async def add_User(db:AsyncSession, user_data: UserCreate) -> User:
         firstName = user_data.firstName,
         lastName = user_data.lastName,
         email = user_data.email,
-        hashedPass = hashed_pass
+        phone = user_data.phone,
+        hashedPass = hashed_pass,
+        userType = user_data.userType
     )
     db.add(user)
     await(db.commit())

@@ -18,6 +18,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(100), unique=True, nullable=True)
     phone: Mapped[int] = mapped_column(Integer(), unique = True, nullable = True)
     hashedPass: Mapped[str] = mapped_column(String(255), unique=False, nullable=False)
+    userType: Mapped[str] = mapped_column(String(15), unique = False, nullable=False)
 
     #deletes databse entries when user removed
     refresh_tokens = relationship("RefreshTokens", back_populates="user", cascade="all, delete-orphan")
