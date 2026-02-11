@@ -3,7 +3,7 @@ from typing import Annotated
 
 import jwt
 import secrets
-from fastapi import APIRouter, Depends, HTTPException, status, Response
+from fastapi import APIRouter, Depends, HTTPException, status, Response, Cookie
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -13,6 +13,8 @@ from jwt.exceptions import InvalidTokenError
 
 from pwdlib import PasswordHash
 from pydantic import BaseModel, EmailStr
+
+from hashlib import sha256
 
 import os
 from dotenv import load_dotenv
@@ -115,7 +117,7 @@ async def create_refresh_token(user, db: AsyncSession):
         query = (
             insert(RefreshTokens).values(
                 user_id = user.user_id,
-                token = token_value,
+                token = sha256(token_value),
                 expireTime = expire
             )
         )
@@ -155,7 +157,13 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)], db: As
         raise credentials_exception
     return user
 
-async def access_from_refresh(token: str, db: AsyncSession = Depends(get_db)):
+async def access_from_refresh(response: Response, refresh_token: Annotated[str | None, Cookie()], db: AsyncSession = Depends(get_db)):
+    if not refresh_token:
+        raise HTTPException(
+            status_code=401, detail="No refresh token provided"
+        ) 
+
+    token = refresh_token.value
     query = (
         select(RefreshTokens)
         .where(RefreshTokens.token == token)
@@ -165,6 +173,7 @@ async def access_from_refresh(token: str, db: AsyncSession = Depends(get_db)):
     result = await db.execute(query)
     entry = result.scalars().first()
     if not entry:
+        response.delete_cookie("refresh_token")
         raise HTTPException(status_code=401, detail="Refresh token invalid")
 
     if entry:
@@ -187,7 +196,7 @@ async def get_current_active_user(current_user: Annotated[User, Depends(get_curr
 #creates account using user inputted data
 #returns jwt access token
 @router.post("/register")
-async def register(userData: UserCreate, db: AsyncSession = Depends(get_db)) -> Token:
+async def register(response: Response, userData: UserCreate, db: AsyncSession = Depends(get_db)) -> Token:
     if not(userData.email or userData.phone):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Phone or Email required")
 
@@ -207,6 +216,19 @@ async def register(userData: UserCreate, db: AsyncSession = Depends(get_db)) -> 
     
 
     user = await add_User(db, userData)
+
+    refresh_token = create_refresh_token(user, db)
+
+    #creates refresh token as cookie sent over HTTPS, cookie expires after defined time but methods in place for token verification aswell
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        max_age=60*60*24*REFRESH_TOKEN_EXPIRE_DAYS
+    )
+
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(data={"sub": user.username}, expire_delta=access_token_expires)
     return Token(access_token= access_token, token_type="bearer")
