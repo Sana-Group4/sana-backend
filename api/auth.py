@@ -19,7 +19,7 @@ from hashlib import sha256
 import os
 from dotenv import load_dotenv
 from db import get_db
-from models import User, RefreshTokens
+from models import User, RefreshTokens, UserType
 
 # Load environment variables
 load_dotenv()
@@ -48,7 +48,7 @@ class UserCreate(BaseModel):
     lastName: str
     username: str
     password: str
-    userType: str #"Client" or "Coach"
+    userType: UserType #Enum containing "CLIENT" and "COACH"
 
 class Token(BaseModel):
     access_token: str
@@ -82,7 +82,7 @@ async def add_User(db:AsyncSession, user_data: UserCreate) -> User:
         email = user_data.email,
         phone = user_data.phone,
         hashedPass = hashed_pass,
-        userType = user_data.userType
+        userType = UserType.user_data.userType
     )
     db.add(user)
     await(db.commit())
@@ -159,6 +159,7 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)], db: As
         raise credentials_exception
     return user
 
+#uses refresh token and provides an access_token if auth successfully
 async def access_from_refresh(response: Response, refresh_token: Annotated[str | None, Cookie()], db: AsyncSession = Depends(get_db)):
     if not refresh_token:
         raise HTTPException(

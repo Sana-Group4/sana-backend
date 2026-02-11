@@ -1,6 +1,11 @@
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import String,Integer,DateTime,ForeignKey
+from sqlalchemy import String,Integer,DateTime,ForeignKey,Enum
+import enum
 from db import Base
+
+class UserType(enum.Enum):
+    CLIENT = "Client"
+    COACH = "Coach"
 
 class Item(Base):
     __tablename__ = "items"
@@ -18,7 +23,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(100), unique=True, nullable=True)
     phone: Mapped[int] = mapped_column(Integer(), unique = True, nullable = True)
     hashedPass: Mapped[str] = mapped_column(String(255), unique=False, nullable=False)
-    userType: Mapped[str] = mapped_column(String(15), unique = False, nullable=False)
+    userType: Mapped[Enum] = mapped_column(Enum(UserType, values_callable=lambda x: [e.value for e in x]), unique = False, nullable=False)
 
     #deletes databse entries when user removed
     refresh_tokens = relationship("RefreshTokens", back_populates="user", cascade="all, delete-orphan")
@@ -31,6 +36,8 @@ class Activity(Base):
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str] = mapped_column(String(500), nullable=False)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+
+    user: Mapped["User"] = relationship(back_populates="activities")
 
 class RefreshTokens(Base):
     __tablename__ = "refresh_tokens"
