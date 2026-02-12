@@ -14,7 +14,8 @@ from jwt.exceptions import InvalidTokenError
 from pwdlib import PasswordHash
 from pydantic import BaseModel, EmailStr
 
-from hashlib import sha256
+import hashlib
+import json
 
 import os
 from dotenv import load_dotenv
@@ -118,8 +119,8 @@ async def create_refresh_token(user, db: AsyncSession):
     try:
         query = (
             insert(RefreshTokens).values(
-                user_id = user.user_id,
-                token = sha256(token_value),
+                user_id = user.id,
+                token = hashlib.sha256(token_value.encode()).hexdigest(),
                 expireTime = expire
             )
         )
@@ -127,10 +128,7 @@ async def create_refresh_token(user, db: AsyncSession):
         await db.execute(query)
         await db.commit()
 
-        return {
-            "token": token_value,
-            "username": user.username
-        }
+        return token_value
 
     except SQLAlchemyError as e:
         await db.rollback()
@@ -159,38 +157,7 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)], db: As
         raise credentials_exception
     return user
 
-#uses refresh token and provides an access_token if auth successfully
-async def access_from_refresh(response: Response, refresh_token: Annotated[str | None, Cookie()], db: AsyncSession = Depends(get_db)):
-    if not refresh_token:
-        raise HTTPException(
-            status_code=401, detail="No refresh token provided"
-        ) 
 
-    token = refresh_token.value
-    query = (
-        select(RefreshTokens)
-        .where(RefreshTokens.token == token)
-        .options(selectinload(RefreshTokens.user))
-    )
-
-    result = await db.execute(query)
-    entry = result.scalars().first()
-    if not entry:
-        response.delete_cookie("refresh_token")
-        raise HTTPException(status_code=401, detail="Refresh token invalid")
-
-    if entry:
-        if datetime().now(timezone.utc) > entry.expireTime:
-            await db.delete(entry)
-            await db.commit()
-            raise HTTPException(status_code=401, detail="Refresh token expired")
-        
-    user = entry.user
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(data={"sub": user.username}, expire_delta=access_token_expires)
-    return Token(access_token= access_token, token_type="bearer")
-        
-    
 async def get_current_active_user(current_user: Annotated[User, Depends(get_current_user)]):
     #can add extra features here, if needed
     return current_user
@@ -220,7 +187,7 @@ async def register(response: Response, userData: UserCreate, db: AsyncSession = 
 
     user = await add_User(db, userData)
 
-    refresh_token = create_refresh_token(user, db)
+    refresh_token = await create_refresh_token(user, db)
 
     #creates refresh token as cookie sent over HTTPS, cookie expires after defined time but methods in place for token verification aswell
     response.set_cookie(
@@ -244,7 +211,7 @@ async def login(response: Response, form_data: Annotated[OAuth2PasswordRequestFo
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail= "Incorrect username or password", headers={"WWW-authenticate": "Bearer"})
     
-    refresh_token = create_refresh_token(user, db)
+    refresh_token = await create_refresh_token(user, db)
 
     #creates refresh token as cookie sent over HTTPS, cookie expires after defined time but methods in place for token verification aswell
     response.set_cookie(
@@ -261,7 +228,35 @@ async def login(response: Response, form_data: Annotated[OAuth2PasswordRequestFo
     return Token(access_token= access_token, token_type="bearer")
 
 @router.post("/refresh")
-async def refresh_access(token:Token = Depends(access_from_refresh)) -> Token:
-    #generates new access token from refresh token
-    #handles exception accordingly
-    return token
+async def refresh_access(response: Response, refresh_token: Annotated[str | None, Cookie()] = None, db: AsyncSession = Depends(get_db)):
+
+    if not refresh_token:
+        raise HTTPException(
+            status_code=401, detail="No refresh token provided"
+        ) 
+
+   
+    #match hashed token, return token+user instance (joined)
+    token_hashed = hashlib.sha256(refresh_token.encode()).hexdigest()
+    query = (
+        select(RefreshTokens)
+        .where(RefreshTokens.token == token_hashed)
+        .options(selectinload(RefreshTokens.user))
+    )
+
+    result = await db.execute(query)
+    entry = result.scalars().first()
+    if not entry:
+        response.delete_cookie("refresh_token")
+        raise HTTPException(status_code=401, detail="Refresh token invalid")
+
+    if entry:
+        if datetime.now(timezone.utc) > entry.expireTime.replace(tzinfo=timezone.utc):
+            await db.delete(entry)
+            await db.commit()
+            raise HTTPException(status_code=401, detail="Refresh token expired")
+        
+    user = entry.user
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(data={"sub": user.username}, expire_delta=access_token_expires)
+    return Token(access_token= access_token, token_type="bearer")
