@@ -8,7 +8,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy import select,insert, or_
+from sqlalchemy import select,delete,insert, or_
 from jwt.exceptions import InvalidTokenError
 
 from pwdlib import PasswordHash
@@ -260,3 +260,31 @@ async def refresh_access(response: Response, refresh_token: Annotated[str | None
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(data={"sub": user.username}, expire_delta=access_token_expires)
     return Token(access_token= access_token, token_type="bearer")
+
+@router.post("/logout")
+async def logout(response: Response, refresh_token: Annotated[str | None, Cookie()]= None, db:AsyncSession = Depends(get_db)):
+
+    if not refresh_token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No Cookie found")
+
+    #match hashed token, return token+user instance (joined)
+    token_hashed = hashlib.sha256(refresh_token.encode()).hexdigest()
+    query = (
+        delete(RefreshTokens)
+        .where(RefreshTokens.token == token_hashed)
+    )
+    result = await db.execute(query)
+    await db.commit()
+
+    response.delete_cookie(
+        key="refresh_token"
+    )
+    
+    if result.rowcount == 0:
+        return{"detail": "Token invalid, Cookie cleared"}
+
+    return{"detail":"refresh token removed succesfully"}
+
+
+    
+
