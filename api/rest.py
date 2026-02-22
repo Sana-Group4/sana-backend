@@ -1,11 +1,13 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, and_
+from sqlalchemy.orm import selectinload
+
 
 from pydantic import BaseModel, ConfigDict
 
 from db import get_db
-from models import Item, User, Activity
+from models import Item, User, CoachLink, Activity, UserType
 from api.auth import get_current_active_user, Token
 
 class SafeUser(BaseModel):
@@ -52,14 +54,35 @@ async def get_account(user: User = Depends(get_current_active_user)):
 async def create_activity(
     activity: ActivityCreate,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_active_user)
+    user: User = Depends(get_current_active_user),
+    assigned_to: int| None = None
 ):
-    """Create a new activity for the current user."""
-    new_activity = Activity(
-        name=activity.name,
-        description=activity.description,
-        user_id=user.id
-    )
+    new_activity
+
+    if assigned_to & user.userType == UserType.COACH:
+        """Ensure coach is the coach of the client being assigned, if so we create the activity"""
+        query = (
+            select(CoachLink)
+            .where(and_(CoachLink.client_id == assigned_to, CoachLink.coach_id == user.id))
+        )
+        client = await db.execute(query)
+        client = client.scalars().first()
+        if not client:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="cannot assign activity. userId provided is not valid")
+        
+        new_activity = Activity(
+            name = activity.name,
+            description = activity.description,
+            user_id = client.client_id
+        )
+    else:
+        """Create a new activity for the current user. (self assigned)"""
+        new_activity = Activity(
+            name=activity.name,
+            description=activity.description,
+            user_id=user.id
+        )
+
     db.add(new_activity)
     await db.commit()
     await db.refresh(new_activity)
