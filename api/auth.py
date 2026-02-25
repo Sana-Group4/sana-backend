@@ -4,6 +4,7 @@ from typing import Annotated
 import jwt
 import secrets
 from fastapi import APIRouter, Depends, HTTPException, status, Response, Cookie
+from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -16,11 +17,12 @@ from pydantic import BaseModel, EmailStr
 
 import hashlib
 import json
+import httpx
 
 import os
 from dotenv import load_dotenv
 from db import get_db
-from models import User, RefreshTokens, UserType
+from models import User, RefreshTokens, UserType, AuthProvider
 
 # Load environment variables
 load_dotenv()
@@ -161,6 +163,90 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)], db: As
 async def get_current_active_user(current_user: Annotated[User, Depends(get_current_user)]):
     #can add extra features here, if needed
     return current_user
+
+
+#uses login code to fetch access_token
+#uses access token to get user profile
+async def get_google_user_data(code):
+    async with httpx.AsyncClient() as client:
+        response = await client.post("https://oauth2.googleapis.com/token", data={
+            "code": code,
+            "client_id": "Sana_Backend_V1",
+            "client_secret": "SECRET",
+            "redirect_uri": "http://localhost:8000/auth/google/callback"
+        })
+        user_data = response.json()
+
+        profile_response = await client.get(
+            "https://www.googleapis.com/oauth2/v3/userinfo",
+            headers={"Authorization": f"Bearer {user_data['access_token']}"}
+        )
+    
+    return profile_response.json()
+
+@router.get("/auth/google/login")
+async def google_login():
+    google_url = "https://accounts.google.com/o/oauth2/v2/auth"
+    params = {
+        "client_id": "Sana_Backend_V1",
+        "redirect_uri": "http://localhost:8000/auth/google/callback",
+        "response_type": "code",
+        "scope": "openid email profile",
+    }
+    #redirects to google login API
+    #callback goes to "/auth/google/callback"
+    return RedirectResponse(f"{google_url}?{'&'.join([f'{k}={v}' for k,v in params])}")
+
+
+@router.get("/auth/google/callback")
+async def google_callback(response: Response, code: str, db: AsyncSession = Depends(get_db)):
+    google_user = await get_google_user_data(code)
+
+    query = (
+        select(User)
+        .where(User.email == google_user['email'] and User.authProvider == AuthProvider.GOOGLE)
+    )
+
+    result = await db.execute(query)
+    user = result.scalars().first()
+
+
+    #user doesnt exist so add to database
+    if not user:
+        user = User(
+            email = google_user['email'],
+            username = google_user['name'],
+            firstName = google_user['given_name'],
+            lastName = google_user['family_name'],
+            UserType = UserType.CLIENT,
+            authProvider = AuthProvider.GOOGLE,
+            google_id = google_user['sub'],
+            hashedPass = None
+        )
+
+        query = insert(User).values(user)
+
+        success = await db.execute(query)
+        if not success:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="error registering user, please try again")
+        
+
+    refresh = create_refresh_token(user, db)
+
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        max_age=60*60*24*REFRESH_TOKEN_EXPIRE_DAYS
+    )
+    
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(data={"sub": user.username}, expire_delta=access_token_expires)
+
+    return Token(access_token= access_token, token_type="bearer")
+       
 
 
 #creates account using user inputted data

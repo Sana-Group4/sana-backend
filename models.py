@@ -15,6 +15,10 @@ class UserType(enum.Enum):
     CLIENT = "Client"
     COACH = "Coach"
 
+class AuthProvider(enum.Enum):
+    LOCAL = "Local"
+    GOOGLE = "Google"
+
 class Item(Base):
     __tablename__ = "items"
 
@@ -30,8 +34,11 @@ class User(Base):
     lastName: Mapped[str] = mapped_column(String(50), unique=False, nullable=False)
     email: Mapped[str] = mapped_column(String(100), unique=True, nullable=True)
     phone: Mapped[int] = mapped_column(Integer(), unique = True, nullable = True)
-    hashedPass: Mapped[str] = mapped_column(String(255), unique=False, nullable=False)
+    hashedPass: Mapped[str] = mapped_column(String(255), unique=False, nullable=True)
     userType: Mapped[UserType] = mapped_column(Enum(UserType, values_callable=lambda x: [e.value for e in x]), unique = False, nullable=False)
+
+    authProvider: Mapped[AuthProvider] = mapped_column(Enum(AuthProvider, values_callable=lambda x: [e.value for e in x]), unique=False, nullable= False)
+    google_id: Mapped[str] = mapped_column(String(20), unique=False, nullable=True)
 
     #deletes databse entries when user removed
     refresh_tokens = relationship("RefreshTokens", back_populates="user", cascade="all, delete-orphan")
