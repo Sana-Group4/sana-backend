@@ -45,8 +45,7 @@ if not ALGORITHM:
 
 #data required for user registration
 class UserCreate(BaseModel):
-    email: EmailStr | None = None
-    phone: int | None = None
+    email: EmailStr
     firstName: str
     lastName: str
     username: str
@@ -253,21 +252,14 @@ async def google_callback(response: Response, code: str, db: AsyncSession = Depe
 #returns jwt access token
 @router.post("/register")
 async def register(response: Response, userData: UserCreate, db: AsyncSession = Depends(get_db)) -> Token:
-    if not(userData.email or userData.phone):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Phone or Email required")
-
     query = select(User).where(
-        or_(User.username == userData.username, User.email == userData.email, User.phone == userData.phone)
+        or_(User.username == userData.username, User.email == userData.email)
     )
     res = await db.execute(query)
     existing_user = res.scalars().first()
 
     if existing_user:
-        if existing_user.username == userData.username:
-            detail_msg = "Username already in use"
-        else:
-            detail_msg = "Email already in use"
-
+        detail_msg = "username or email already in use"
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail= detail_msg)
     
 
