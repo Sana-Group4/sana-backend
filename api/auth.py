@@ -171,13 +171,14 @@ async def get_google_user_data(code):
         response = await client.post("https://oauth2.googleapis.com/token", data={
             "code": code,
             "client_id": "Sana_Backend_V1",
-            "client_secret": "SECRET",
-            "redirect_uri": "http://localhost:8000/auth/google/callback"
+            "client_secret": os.getenv("GOOGLE_CLIENT_SECRET"),
+            "redirect_uri": "http://localhost:8000/auth/google/callback",
+            "grant_type": "authorization_code"
         })
         user_data = response.json()
 
         profile_response = await client.get(
-            "https://www.googleapis.com/oauth2/v3/userinfo",
+            "https://www.googleapis.com/oauth2/v1/userinfo",
             headers={"Authorization": f"Bearer {user_data['access_token']}"}
         )
     
@@ -203,7 +204,7 @@ async def google_callback(response: Response, code: str, db: AsyncSession = Depe
 
     query = (
         select(User)
-        .where(User.email == google_user['email'] and User.authProvider == AuthProvider.GOOGLE)
+        .where(User.email == google_user['email'], User.authProvider == AuthProvider.GOOGLE)
     )
 
     result = await db.execute(query)
@@ -214,20 +215,21 @@ async def google_callback(response: Response, code: str, db: AsyncSession = Depe
     if not user:
         user = User(
             email = google_user['email'],
-            username = google_user['name'],
-            firstName = google_user['given_name'],
-            lastName = google_user['family_name'],
+            username = google_user.get('name', google_user["email"]),
+            firstName = google_user.get('given_name'),
+            lastName = google_user.get('family_name'),
             UserType = UserType.CLIENT,
             authProvider = AuthProvider.GOOGLE,
             google_id = google_user['sub'],
-            hashedPass = None
         )
 
-        query = insert(User).values(user)
-
-        success = await db.execute(query)
-        if not success:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="error registering user, please try again")
+        db.add(user)
+        try:
+            await db.commit()
+            await db.refresh(user)
+        except Exception:
+            await db.rollback()
+            raise HTTPException(status_code=500, detail="Database error")
         
 
     refresh = create_refresh_token(user, db)
