@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 from sqlalchemy.orm import selectinload
@@ -28,6 +28,15 @@ class ActivityResponse(BaseModel):
     description: str
     user_id: int
 
+class UserUpdatable(BaseModel):
+    email: str | None
+    phone: int | None
+    lastName: str | None
+    firstName: str | None
+    #note: UploadFile contains: filename, content_type, file
+    profilePic: UploadFile | None
+
+
 
 router = APIRouter(prefix="/api")
 
@@ -49,6 +58,12 @@ async def list_items(db: AsyncSession = Depends(get_db)):
 @router.get("/account", response_model=SafeUser)
 async def get_account(user: User = Depends(get_current_active_user)):
     return user
+
+@router.post("/update_account")
+async def update_account(user: User = Depends(get_current_active_user), data = Depends(UserUpdatable)):
+
+    
+    pass     
 
 @router.post("/activities", response_model=ActivityResponse)
 async def create_activity(

@@ -9,8 +9,9 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy import select,delete,insert, or_
+from sqlalchemy import select,delete,insert, or_, and_
 from jwt.exceptions import InvalidTokenError
+from urllib.parse import urlencode
 
 from pwdlib import PasswordHash
 from pydantic import BaseModel, EmailStr
@@ -167,44 +168,57 @@ async def get_current_active_user(current_user: Annotated[User, Depends(get_curr
 #uses login code to fetch access_token
 #uses access token to get user profile
 async def get_google_user_data(code):
+    secret =os.getenv("GOOGLE_CLIENT_SECRET")
+    print(secret)
     async with httpx.AsyncClient() as client:
         response = await client.post("https://oauth2.googleapis.com/token", data={
             "code": code,
-            "client_id": "Sana_Backend_V1",
-            "client_secret": os.getenv("GOOGLE_CLIENT_SECRET"),
+            "client_id": "408392816898-84qrjq4b9d5kmopehjg150k6t4hu9b69.apps.googleusercontent.com",
+            "client_secret": secret,
             "redirect_uri": "http://localhost:8000/auth/google/callback",
             "grant_type": "authorization_code"
         })
-        user_data = response.json()
+        token = response.json()
+
+        if "access_token" not in token:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Goole Token Error: {token.get('error_description', 'Invalid Code')}"
+            )
 
         profile_response = await client.get(
-            "https://www.googleapis.com/oauth2/v1/userinfo",
-            headers={"Authorization": f"Bearer {user_data['access_token']}"}
+            "https://www.googleapis.com/oauth2/v3/userinfo",
+            headers={"Authorization": f"Bearer {token['access_token']}"}
         )
-    
-    return profile_response.json()
 
-@router.get("/auth/google/login")
+    
+        return profile_response.json()
+
+@router.get("/google/login")
 async def google_login():
     google_url = "https://accounts.google.com/o/oauth2/v2/auth"
     params = {
-        "client_id": "Sana_Backend_V1",
+        "client_id": "408392816898-84qrjq4b9d5kmopehjg150k6t4hu9b69.apps.googleusercontent.com",
         "redirect_uri": "http://localhost:8000/auth/google/callback",
         "response_type": "code",
         "scope": "openid email profile",
     }
     #redirects to google login API
     #callback goes to "/auth/google/callback"
-    return RedirectResponse(f"{google_url}?{'&'.join([f'{k}={v}' for k,v in params])}")
+    url = f"{google_url}?{urlencode(params)}"
+    return RedirectResponse(url)
 
 
-@router.get("/auth/google/callback")
+@router.get("/google/callback")
 async def google_callback(response: Response, code: str, db: AsyncSession = Depends(get_db)):
     google_user = await get_google_user_data(code)
 
     query = (
         select(User)
-        .where(User.email == google_user['email'], User.authProvider == AuthProvider.GOOGLE)
+        .where(
+            User.email == google_user['email'], 
+            User.authProvider == AuthProvider.GOOGLE.value
+        )
     )
 
     result = await db.execute(query)
@@ -218,9 +232,9 @@ async def google_callback(response: Response, code: str, db: AsyncSession = Depe
             username = google_user.get('name', google_user["email"]),
             firstName = google_user.get('given_name'),
             lastName = google_user.get('family_name'),
-            UserType = UserType.CLIENT,
-            authProvider = AuthProvider.GOOGLE,
-            google_id = google_user['sub'],
+            userType = UserType.CLIENT.value,
+            authProvider = AuthProvider.GOOGLE.value,
+            google_id = google_user.get('sub'),
         )
 
         db.add(user)

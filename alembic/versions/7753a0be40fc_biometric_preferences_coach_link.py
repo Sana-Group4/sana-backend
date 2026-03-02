@@ -55,7 +55,7 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('user_id')
     )
 
-    #looks for 
+    #looks for existing types and add if not existant
     op.execute("""
         DO $$
         BEGIN
