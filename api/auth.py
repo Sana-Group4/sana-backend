@@ -83,9 +83,9 @@ async def add_User(db:AsyncSession, user_data: UserCreate) -> User:
         firstName = user_data.firstName,
         lastName = user_data.lastName,
         email = user_data.email,
-        phone = user_data.phone,
         hashedPass = hashed_pass,
-        userType = UserType.user_data.userType
+        userType = UserType(user_data.userType),
+        authProvider = AuthProvider.LOCAL.value
     )
     db.add(user)
     await(db.commit())
@@ -277,6 +277,7 @@ async def register(response: Response, userData: UserCreate, db: AsyncSession = 
     if existing_user:
         detail_msg = "username or email already in use"
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail= detail_msg)
+
     
 
     user = await add_User(db, userData)

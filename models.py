@@ -33,7 +33,7 @@ class User(Base):
     firstName: Mapped[str] = mapped_column(String(50), unique=False, nullable=False)
     lastName: Mapped[str] = mapped_column(String(50), unique=False, nullable=False)
     email: Mapped[str] = mapped_column(String(100), unique=True, nullable=True)
-    phone: Mapped[int] = mapped_column(Integer(), unique = True, nullable = True)
+    phone: Mapped[int] = mapped_column(Integer(), unique = True, nullable=True)
     hashedPass: Mapped[str] = mapped_column(String(255), unique=False, nullable=True)
     userType: Mapped[UserType] = mapped_column(Enum(UserType, values_callable=lambda x: [e.value for e in x]), unique = False, nullable=False)
 
