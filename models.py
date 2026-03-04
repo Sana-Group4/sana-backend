@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import String,Integer,DateTime,ForeignKey,Enum,Float,Index
+from sqlalchemy import String,Integer,DateTime,ForeignKey,Enum,Float,Index, Boolean
 import enum
 from db import Base
 from datetime import datetime
@@ -10,10 +10,6 @@ class BiometricType(enum.Enum):
     WEIGHT_KG = "weight_kg"
     STEPS_PER_DAY = "steps_per_day"
     CALORIES_BURNED_PER_DAY = "calories_per_day"
-
-class UserType(enum.Enum):
-    CLIENT = "Client"
-    COACH = "Coach"
 
 class AuthProvider(enum.Enum):
     LOCAL = "Local"
@@ -35,7 +31,8 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(100), unique=True, nullable=True)
     phone: Mapped[int] = mapped_column(Integer(), unique = True, nullable=True)
     hashedPass: Mapped[str] = mapped_column(String(255), unique=False, nullable=True)
-    userType: Mapped[UserType] = mapped_column(Enum(UserType, values_callable=lambda x: [e.value for e in x]), unique = False, nullable=False)
+    is_coach: Mapped[bool] = mapped_column(Boolean, unique=False, nullable=False, default=False )
+
 
     authProvider: Mapped[AuthProvider] = mapped_column(Enum(AuthProvider, values_callable=lambda x: [e.value for e in x]), unique=False, nullable= False)
     google_id: Mapped[str] = mapped_column(String(50), unique=False, nullable=True)
@@ -94,7 +91,7 @@ class RefreshTokens(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     token: Mapped[str] = mapped_column(String(255))
-    expireTime: Mapped[datetime] = mapped_column(DateTime(), nullable=False)
+    expireTime: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     #allows for 'instance.user' to get user entry
     user: Mapped["User"] = relationship(back_populates="refresh_tokens")

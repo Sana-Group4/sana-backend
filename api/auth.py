@@ -23,7 +23,7 @@ import httpx
 import os
 from dotenv import load_dotenv
 from db import get_db
-from models import User, RefreshTokens, UserType, AuthProvider
+from models import User, RefreshTokens, AuthProvider
 
 # Load environment variables
 load_dotenv()
@@ -51,7 +51,6 @@ class UserCreate(BaseModel):
     lastName: str
     username: str
     password: str
-    userType: UserType #Enum containing "CLIENT" and "COACH"
 
 class Token(BaseModel):
     access_token: str
@@ -59,7 +58,6 @@ class Token(BaseModel):
 
 class TokenData(BaseModel):
     username: str | None = None
-
 
 password_hash = PasswordHash.recommended()
 
@@ -71,9 +69,18 @@ def verify_password(password, hashed_password):
 def get_hashed_pass(password):
     return password_hash.hash(password)
 
+#get user account related to email/phone (username variable used as that is the 0Auth for variable used)
+#better for back tracing maybe
 async def get_user(db: AsyncSession, username: str) -> User | None:
-    result = await db.execute(select(User).where(User.username == username))
-    return result.scalars().first()
+
+    result = await db.execute(select(User).where(User.email == username))
+    user = result.scalars().first()
+
+    if user == None and username.isdigit():
+        result = await db.execute(select(User).where(User.phone == int(username)))
+        user = result.scalars().first()
+
+    return user
 
 #inserts data into table and returns the new data stored in the database (including defaults)
 async def add_User(db:AsyncSession, user_data: UserCreate) -> User:
@@ -84,8 +91,8 @@ async def add_User(db:AsyncSession, user_data: UserCreate) -> User:
         lastName = user_data.lastName,
         email = user_data.email,
         hashedPass = hashed_pass,
-        userType = UserType(user_data.userType),
-        authProvider = AuthProvider.LOCAL.value
+        is_coach = False,
+        authProvider = AuthProvider.LOCAL
     )
     db.add(user)
     await(db.commit())
@@ -95,7 +102,8 @@ async def add_User(db:AsyncSession, user_data: UserCreate) -> User:
 
 async def auth_user(db, username, password):
     user = await get_user(db, username)
-    if not user:
+    print(user.authProvider)
+    if (not user) or (user.authProvider != AuthProvider.LOCAL):
         return False
     if not verify_password(password, user.hashedPass):
         return False
@@ -217,7 +225,7 @@ async def google_callback(response: Response, code: str, db: AsyncSession = Depe
         select(User)
         .where(
             User.email == google_user['email'], 
-            User.authProvider == AuthProvider.GOOGLE.value
+            User.authProvider == AuthProvider.GOOGLE
         )
     )
 
@@ -232,7 +240,7 @@ async def google_callback(response: Response, code: str, db: AsyncSession = Depe
             username = google_user.get('name', google_user["email"]),
             firstName = google_user.get('given_name'),
             lastName = google_user.get('family_name'),
-            userType = UserType.CLIENT.value,
+            is_coach = False,
             authProvider = AuthProvider.GOOGLE.value,
             google_id = google_user.get('sub'),
         )
