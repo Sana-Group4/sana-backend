@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 from sqlalchemy.orm import selectinload
@@ -7,12 +7,13 @@ from sqlalchemy.orm import selectinload
 from pydantic import BaseModel, ConfigDict
 
 from db import get_db
-from models import Item, User, CoachLink, Activity, UserType
+from models import Item, User, CoachLink, Activity
 from api.auth import get_current_active_user, Token
 
 class SafeUser(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     email: str
+    phone: int | None = None
     firstName: str
     lastName: str
     username: str
@@ -28,6 +29,11 @@ class ActivityResponse(BaseModel):
     description: str
     user_id: int
 
+class UserUpdatable(BaseModel):
+    email: str | None = None
+    phone: int | None = None
+    lastName: str | None = None
+    firstName: str | None = None
 
 router = APIRouter(prefix="/api")
 
@@ -50,6 +56,17 @@ async def list_items(db: AsyncSession = Depends(get_db)):
 async def get_account(user: User = Depends(get_current_active_user)):
     return user
 
+@router.post("/update_account", response_model=SafeUser)
+async def update_account(user: User = Depends(get_current_active_user), data: UserUpdatable = Depends(UserUpdatable), db: AsyncSession = Depends(get_db)):
+        for k, v in data:
+            if v is not None:
+                setattr(user, k, v)
+        
+        await db.commit()
+        await db.refresh(user)
+
+        return user
+
 @router.post("/activities", response_model=ActivityResponse)
 async def create_activity(
     activity: ActivityCreate,
@@ -59,7 +76,7 @@ async def create_activity(
 ):
     new_activity
 
-    if assigned_to & user.userType == UserType.COACH:
+    if assigned_to & user.is_coach == True:
         """Ensure coach is the coach of the client being assigned, if so we create the activity"""
         query = (
             select(CoachLink)
