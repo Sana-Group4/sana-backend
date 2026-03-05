@@ -1,13 +1,16 @@
 from fastapi import FastAPI, Depends
 from strawberry.fastapi import GraphQLRouter
 
-from rest import router as rest_router
+from api.rest import router as rest_router
+from api.auth import router as auth_router
+
 from db import get_db
 from graphql_schema import schema
 
 app = FastAPI()
 
 app.include_router(rest_router)
+app.include_router(auth_router)
 
 async def get_context(db=Depends(get_db)):
     return {"db": db}
