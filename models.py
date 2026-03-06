@@ -76,7 +76,9 @@ class Biometric(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    biometric_type: Mapped[BiometricType] = mapped_column( Enum(BiometricType, values_callable=lambda x: [e.value for e in x]), nullable=False, index=True)
+    biometric_type: Mapped[BiometricType] = mapped_column(
+        Enum(BiometricType, name="biometricstype", values_callable=lambda x: [e.value for e in x]),
+        nullable=False, index=True)
     recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=datetime.utcnow, index=True)
     value_float: Mapped[float | None] = mapped_column(Float, nullable=True)
     value_int: Mapped[int | None] = mapped_column(Integer, nullable=True)

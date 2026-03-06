@@ -102,8 +102,10 @@ async def add_User(db:AsyncSession, user_data: UserCreate) -> User:
 
 async def auth_user(db, username, password):
     user = await get_user(db, username)
+    if not user:
+        return False
     print(user.authProvider)
-    if (not user) or (user.authProvider != AuthProvider.LOCAL):
+    if user.authProvider != AuthProvider.LOCAL:
         return False
     if not verify_password(password, user.hashedPass):
         return False
