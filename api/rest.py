@@ -17,6 +17,7 @@ class SafeUser(BaseModel):
     firstName: str
     lastName: str
     username: str
+    is_coach: bool
 
 class ActivityCreate(BaseModel):
     name: str
