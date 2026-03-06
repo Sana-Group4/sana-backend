@@ -35,6 +35,7 @@ class UserUpdatable(BaseModel):
     phone: int | None = None
     lastName: str | None = None
     firstName: str | None = None
+    is_coach: bool | None = None
 
 router = APIRouter(prefix="/api")
 
