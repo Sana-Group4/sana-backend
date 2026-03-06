@@ -82,6 +82,12 @@ async def get_user(db: AsyncSession, username: str) -> User | None:
 
     return user
 
+async def get_user_from_username(db: AsyncSession, username: str) -> User | None:
+    result = await db.execute(select(User).where(User.username == username))
+    user = result.scalars().first()
+
+    return user
+
 #inserts data into table and returns the new data stored in the database (including defaults)
 async def add_User(db:AsyncSession, user_data: UserCreate) -> User:
     hashed_pass = get_hashed_pass(user_data.password)
@@ -102,8 +108,9 @@ async def add_User(db:AsyncSession, user_data: UserCreate) -> User:
 
 async def auth_user(db, username, password):
     user = await get_user(db, username)
-    print(user.authProvider)
-    if (not user) or (user.authProvider != AuthProvider.LOCAL):
+    if (not user):
+        return False
+    if (user.authProvider != AuthProvider.LOCAL):
         return False
     if not verify_password(password, user.hashedPass):
         return False
@@ -162,7 +169,7 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)], db: As
         token_data = TokenData(username=username)
     except jwt.PyJWKError:
         raise credentials_exception
-    user = await get_user(db, username=token_data.username)
+    user = await get_user_from_username(db, username=token_data.username)
     if user is None:
         raise credentials_exception
     return user
