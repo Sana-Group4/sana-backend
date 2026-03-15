@@ -16,9 +16,14 @@ from urllib.parse import urlencode
 from pwdlib import PasswordHash
 from pydantic import BaseModel, EmailStr
 
+import smtplib
+import ssl
+from email.message import EmailMessage
+
 import hashlib
 import json
 import httpx
+import random
 
 import os
 from dotenv import load_dotenv
@@ -37,6 +42,11 @@ SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = os.getenv("ALGORITHM")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
+
+smtp_server = 'smtp.gmail.com'
+port = 465
+sender_email = "kbprojectcontact@gmail.com"
+sender_password = os.getenv("GMAIL_APP_PASS")
 
 # Validate required variables
 if not SECRET_KEY:
@@ -276,8 +286,43 @@ async def google_callback(response: Response, code: str, db: AsyncSession = Depe
     access_token = create_access_token(data={"sub": user.username}, expire_delta=access_token_expires)
 
     return Token(access_token= access_token, token_type="bearer")
-       
 
+
+async def make_reset_email(code, receiver_email):
+    email = EmailMessage()
+    email.set_content("Sana Password reset code: " + str(code))
+    email["Subject"] = "Sana Password Reset"
+    email["From"] = sender_email
+    email["to"] = receiver_email
+
+    return email
+
+@router.get("/password_reset")
+async def reset_password(email: str, db: AsyncSession = Depends(get_db)):
+    query = select(User).where(
+        User.email == email
+    )
+    res = await db.execute(query)
+    user = res.scalars().first()
+
+    if user:
+        #random 5 digit code
+        code = random.randint(10000, 99999)
+        to_send = await make_reset_email(code, email)
+        context = ssl.create_default_context()
+
+        #store code with userID+ timer for comparison
+
+        try:
+            with smtplib.SMTP_SSL(smtp_server, port, context=context) as server:
+                server.login(sender_email, sender_password)
+                server.send_message(to_send)
+
+        except Exception as e:
+            raise HTTPException(status_code= status.HTTP_400_BAD_REQUEST, detail="Problem occured while trying to send email")
+
+
+    return
 
 #creates account using user inputted data
 #returns jwt access token
