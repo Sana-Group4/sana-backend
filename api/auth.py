@@ -3,7 +3,8 @@ from typing import Annotated
 
 import jwt
 import secrets
-from fastapi import APIRouter, Depends, HTTPException, status, Response, Cookie
+from contextlib import asynccontextmanager
+from fastapi import APIRouter, Depends, HTTPException, status, Response, Cookie, BackgroundTasks
 from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,7 +24,8 @@ from email.message import EmailMessage
 import hashlib
 import json
 import httpx
-import random
+import asyncio
+import string
 
 import os
 from dotenv import load_dotenv
@@ -47,6 +49,10 @@ smtp_server = 'smtp.gmail.com'
 port = 465
 sender_email = "kbprojectcontact@gmail.com"
 sender_password = os.getenv("GMAIL_APP_PASS")
+
+#Key = code
+reset_codes = {}
+
 
 # Validate required variables
 if not SECRET_KEY:
@@ -78,6 +84,18 @@ def verify_password(password, hashed_password):
 
 def get_hashed_pass(password):
     return password_hash.hash(password)
+
+
+async def reset_token_cleanup():
+    while True:
+        await asyncio.sleep(60)
+        now = datetime.now(timezone.utc)
+
+        expired = [code for code, data in reset_codes.items() if data["expires"] < now]
+
+        for code in expired:
+            del reset_codes[code]
+    
 
 #get user account related to email/phone (username variable used as that is the 0Auth for variable used)
 #better for back tracing maybe
@@ -219,6 +237,14 @@ async def get_google_user_data(code):
     
         return profile_response.json()
 
+@asynccontextmanager
+async def auth_lifespan(app: FastAPI):
+
+    task = asyncio.create_task(reset_token_cleanup())
+    yield
+
+    task.cancel()
+
 @router.get("/google/login")
 async def google_login():
     google_url = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -290,15 +316,21 @@ async def google_callback(response: Response, code: str, db: AsyncSession = Depe
 
 async def make_reset_email(code, receiver_email):
     email = EmailMessage()
-    email.set_content("Sana Password reset code: " + str(code))
+    email.set_content("Sana Password reset code (expires in 5 minutes): " + str(code))
     email["Subject"] = "Sana Password Reset"
     email["From"] = sender_email
     email["to"] = receiver_email
 
     return email
 
-@router.get("/password_reset")
-async def reset_password(email: str, db: AsyncSession = Depends(get_db)):
+def send_reset_email_sync(to_send, sender_email, sender_password):
+    context = ssl.create_default_context()
+    with smtplib.SMTP_SSL(smtp_server, port, context=context) as server:
+        server.login(sender_email, sender_password)
+        server.send_message(to_send)
+
+@router.post("/start-passsword-reset")
+async def reset_password_email(email: str, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
     query = select(User).where(
         User.email == email
     )
@@ -306,23 +338,84 @@ async def reset_password(email: str, db: AsyncSession = Depends(get_db)):
     user = res.scalars().first()
 
     if user:
-        #random 5 digit code
-        code = random.randint(10000, 99999)
+
+        #random 5 digit code (unique)
+        code = ''.join(secrets.choice(string.digits) for _ in range(6))
+        while code in reset_codes:
+            code = ''.join(secrets.choice(string.digits) for _ in range(6))
+
         to_send = await make_reset_email(code, email)
-        context = ssl.create_default_context()
 
+        expires = datetime.now(timezone.utc) + timedelta(minutes=5)
         #store code with userID+ timer for comparison
+        reset_codes[code] = {"user_id": user.id, "expires": expires}
 
-        try:
-            with smtplib.SMTP_SSL(smtp_server, port, context=context) as server:
-                server.login(sender_email, sender_password)
-                server.send_message(to_send)
+        #send email in background so system doesnt halt
+        background_tasks.add_task(send_reset_email_sync, to_send, sender_email, sender_password)
 
-        except Exception as e:
-            raise HTTPException(status_code= status.HTTP_400_BAD_REQUEST, detail="Problem occured while trying to send email")
+    return {"msg": "If an account exists with this email, a code has been sent."}
 
 
-    return
+#compares stored code, hands out token as auth
+@router.post("/verify-reset-code")
+async def verify_reset_code(code: str):
+    data = reset_codes.get(code)
+
+    if not data or data["expires"] < datetime.now(timezone.utc):
+        if code in reset_codes: del reset_codes[code]
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or Expired code"
+        )
+
+    user_id = data["user_id"]
+
+    permission_payload = {
+        "sub": str(user_id),
+        "exp": datetime.now(timezone.utc)+timedelta(minutes=5),
+        "action": "confirmed_reset"
+    }
+
+    temp_token = jwt.encode(permission_payload, SECRET_KEY, algorithm=ALGORITHM)
+
+    del reset_codes[code]
+
+    return{
+        "status": "veirfied",
+        "reset_token": temp_token,
+        "message": "Code accepted"
+    }
+
+#updates password using jwt as authorization
+@router.post("/finalize-passowrd-reset")
+async def update_pass(token: str, new_password: str, db: AsyncSession = Depends(get_db)):
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+
+        if payload.get("action") != "confirmed_reset":
+            raise HTTPException(status_code=400, detail= "invalid token type")
+        
+        user_id = int(payload.get("sub"))
+
+        hashed_password = get_hashed_pass(new_password)
+
+        query = select(User).where(User.id == user_id)
+        res = await db.execute(query)
+        user = res.scalars().first()
+
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        user.hashedPass = hashed_password
+
+        await db.commit()
+
+        return {"msg": "password updated successfully"}
+
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=400, detail="Session expired, start over")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=400, detail="Invalid session")
+
 
 #creates account using user inputted data
 #returns jwt access token
