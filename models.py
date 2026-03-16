@@ -71,6 +71,13 @@ class CoachLink(Base):
     coach: Mapped["User"] = relationship("User", foreign_keys=[coach_id], back_populates="coach_links")
     client: Mapped["User"] = relationship("User", foreign_keys=[client_id], back_populates="client_links")
 
+class CoachInvites(Base):
+    __tablename__ = "coachinvites"
+
+    coach_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    expires: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=False)
+
 class Biometric(Base):
     __tablename__ = "biometrics"
 

@@ -1,14 +1,16 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
-from datetime import datetime
+from sqlalchemy import select, and_, delete
+from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import selectinload
 
+import asyncio
 
 from pydantic import BaseModel, ConfigDict
 
 from db import get_db
-from models import Item, User, CoachLink, Activity, Biometric, BiometricType
+from models import Item, User, CoachLink, Activity, Biometric, BiometricType, CoachInvites
 from api.auth import get_current_active_user, Token
 
 class SafeUser(BaseModel):
@@ -59,6 +61,7 @@ class BiometricVectorOut(BaseModel):
     t: list[datetime]
     y: list[float | int | None]
 
+active_streams={}
 
 router = APIRouter(prefix="/api")
 
@@ -91,6 +94,73 @@ async def update_account(user: User = Depends(get_current_active_user), data: Us
         await db.refresh(user)
 
         return user
+
+@router.get("/notifications")
+async def notification_stream(user: User = Depends(get_current_active_user)):
+    async def event_publisher():
+
+        queue = asyncio.Queue()
+        active_streams[user.id] = queue
+
+        try:
+            while True:
+                msg  = await queue.get()
+                yield f"data: {msg}\n\n"
+        except asyncio.CancelledError:
+            active_streams.pop(user.id, None)
+    
+    return StreamingResponse(event_publisher(), media_type="text/event-stream")
+
+
+@router.post("/client-invite")
+async def invite_client(client_id:int ,coach: User = Depends(get_current_active_user) ,db: AsyncSession = Depends(get_db)):
+
+    invite = CoachInvites(
+        client_id = client_id,
+        coach_id = coach.id,
+        expires = datetime.now(timezone.utc) + timedelta(days = 10)
+    )
+
+    db.add(invite)
+    await db.commit()
+    await db.refresh(invite)
+
+    if client_id in active_streams:
+        await active_streams[client_id].put(f"Coach {coach.id} sent you an invite!")
+        return {"status": "Client notified"}
+    
+    return {"status": "Invite saved, but client is offline (they'll see it next login)"}
+
+@router.post("/accept-invite")
+async def accept_invite(coach: int, client: User = Depends(get_current_active_user), db: AsyncSession = Depends(get_db)):
+
+    query = select(CoachInvites).where(
+        and_(CoachInvites.coach_id == coach, 
+            CoachInvites.client_id == client.id)
+        )
+    res = await db.execute(query)
+    valid_invite = False
+    for instance in res.scalars().all():
+        if instance.expires > datetime.now(timezone.utc):
+            entry = CoachLink(
+            client_id = instance.client_id,
+            coach_id = instance.coach_id
+            )
+            db.add(entry)
+            valid_invite = True
+            break
+    
+    if valid_invite:
+        delete_query = delete(CoachInvites).where(
+            CoachInvites.coach_id == coach,
+            CoachInvites.client_id == client.id
+        )
+        await db.execute(delete_query)
+        await db.commit()
+        return {"status": "coach added successfully"}
+
+
+    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="no valid invites or invites expired")
 
 @router.post("/activities", response_model=ActivityResponse)
 async def create_activity(
