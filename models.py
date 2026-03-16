@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import String,Integer,DateTime,ForeignKey,Enum,Float,Index, Boolean
+from sqlalchemy import Column, String,Integer,DateTime,ForeignKey,Enum,Float,Index, Boolean
 import enum
 from db import Base
 from datetime import datetime
@@ -39,7 +39,7 @@ class User(Base):
 
     #deletes databse entries when user removed
     refresh_tokens = relationship("RefreshTokens", back_populates="user", cascade="all, delete-orphan")
-    activities = relationship("Activity", back_populates="user", cascade="all, delete-orphan")
+    activities: Mapped[list["Activity"]] = relationship("Activity", foreign_keys="Activity.user_id", back_populates="user", cascade="all, delete-orphan")
     preference: Mapped["Preference"] = relationship(back_populates="user", uselist=False, cascade="all, delete-orphan")
     biometrics: Mapped[list["Biometric"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     coach_links: Mapped[list["CoachLink"]] = relationship("CoachLink", foreign_keys="CoachLink.coach_id", back_populates="coach", cascade="all, delete-orphan")
@@ -54,6 +54,20 @@ class Preference(Base):
     preference_info: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     user: Mapped["User"] = relationship(back_populates="preference")
 
+class ActivityType(enum.Enum):
+    STEPS = "steps"
+    WORKOUT_MINUTES = "workout_minutes"
+    WORKOUT_SESSION = "workout_session"
+    CALORIES_BURNED = "calories_burned"
+    WEIGHT = "weight"
+    CUSTOM = "custom"
+
+class ActivityStatus(enum.Enum):
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    OVERDUE = "overdue"
+
 class Activity(Base):
     __tablename__ = "activities"
 
@@ -61,7 +75,9 @@ class Activity(Base):
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str] = mapped_column(String(500), nullable=False)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
-    user: Mapped["User"] = relationship(back_populates="activities")
+    assigned_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    assigned_by_coach: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    user: Mapped["User"] = relationship("User", foreign_keys=[user_id], back_populates="activities")
 
 class CoachLink(Base):
     __tablename__ = "coaches"

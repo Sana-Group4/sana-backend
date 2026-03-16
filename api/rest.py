@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 from pydantic import BaseModel, ConfigDict
 
 from db import get_db
-from models import Item, User, CoachLink, Activity, Biometric, BiometricType
+from models import Item, User, CoachLink, Activity, Biometric, BiometricType, ActivityType, ActivityStatus
 from api.auth import get_current_active_user, Token
 
 class SafeUser(BaseModel):
@@ -22,13 +22,29 @@ class SafeUser(BaseModel):
 class ActivityCreate(BaseModel):
     name: str
     description: str
+    activity_type: ActivityType = ActivityType.CUSTOM
+    target_value: float | None = None
+    unit: str | None = None
+    due_at: datetime | None = None
 
 class ActivityResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
+
     id: int
     name: str
     description: str
     user_id: int
+    assigned_by_id: int
+    assigned_by_coach: bool
+
+    activity_type: ActivityType
+    target_value: float | None
+    progress_value: float
+    unit: str | None
+    assigned_at: datetime
+    due_at: datetime | None
+    status: ActivityStatus
+
 
 class UserUpdatable(BaseModel):
     email: str | None = None
@@ -95,32 +111,56 @@ async def create_activity(
     activity: ActivityCreate,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_active_user),
-    assigned_to: int| None = None
+    assigned_to: int | None = None
 ):
-    new_activity
+    if assigned_to is not None:
+        if not user.is_coach:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only coaches can assign activities to clients."
+            )
 
-    if assigned_to & user.is_coach == True:
-        """Ensure coach is the coach of the client being assigned, if so we create the activity"""
-        query = (
-            select(CoachLink)
-            .where(and_(CoachLink.client_id == assigned_to, CoachLink.coach_id == user.id))
+        query = select(CoachLink).where(
+            and_(
+                CoachLink.client_id == assigned_to,
+                CoachLink.coach_id == user.id
+            )
         )
-        client = await db.execute(query)
-        client = client.scalars().first()
-        if not client:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="cannot assign activity. userId provided is not valid")
-        
-        new_activity = Activity(
-            name = activity.name,
-            description = activity.description,
-            user_id = client.client_id
-        )
-    else:
-        """Create a new activity for the current user. (self assigned)"""
+        result = await db.execute(query)
+        client_link = result.scalars().first()
+
+        if not client_link:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cannot assign activity to a user who is not your client."
+            )
+
         new_activity = Activity(
             name=activity.name,
             description=activity.description,
-            user_id=user.id
+            user_id=assigned_to,
+            assigned_by_id=user.id,
+            assigned_by_coach=True,
+            activity_type=activity.activity_type,
+            target_value=activity.target_value,
+            progress_value=0,
+            unit=activity.unit,
+            due_at=activity.due_at,
+            status=ActivityStatus.PENDING,
+        )
+    else:
+        new_activity = Activity(
+            name=activity.name,
+            description=activity.description,
+            user_id=user.id,
+            assigned_by_id=user.id,
+            assigned_by_coach=False,
+            activity_type=activity.activity_type,
+            target_value=activity.target_value,
+            progress_value=0,
+            unit=activity.unit,
+            due_at=activity.due_at,
+            status=ActivityStatus.PENDING,
         )
 
     db.add(new_activity)
