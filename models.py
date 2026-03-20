@@ -94,13 +94,31 @@ class CoachInvites(Base):
     client_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     expires: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=False)
 
+class Session(Base):
+    __tablename__ = "sessions"
+    coach_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    date_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=datetime.now(tz="utc"))
+    session_title: Mapped[str] = mapped_column(String(50), nullable=False)
+    session_desc: Mapped[str] = mapped_column(String(500), nullable=False)
+    session_duration: Mapped[int] = mapped_column(Integer, nullable=True)
+
+class CoachInfo(Base):
+    __tablename__ = "coach_info"
+    coach_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    description: Mapped[str] = mapped_column(String(200), nullable= True)
+    focus: Mapped[list] = mapped_column(list(String(30)), nullable= True)
+    specialties: Mapped[list] = mapped_column(list(String(30)), nullable= True)
+    Notes: Mapped[str] = mapped_column(String(200), nullable= True)
+
+
 class Biometric(Base):
     __tablename__ = "biometrics"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     biometric_type: Mapped[BiometricType] = mapped_column( Enum(BiometricType, values_callable=lambda x: [e.value for e in x]), nullable=False, index=True)
-    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=datetime.utcnow, index=True)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=datetime.now(tz="utc"), index=True)
     value_float: Mapped[float | None] = mapped_column(Float, nullable=True)
     value_int: Mapped[int | None] = mapped_column(Integer, nullable=True)
     start_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

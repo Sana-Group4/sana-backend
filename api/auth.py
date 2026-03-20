@@ -154,7 +154,6 @@ def create_access_token(data: dict, expire_delta: timedelta | None = None):
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
-
 #creates and adds refresh token to database, returns values required to make refresh cookie
 async def create_refresh_token(user, db: AsyncSession):
     
