@@ -4,8 +4,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, delete
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import selectinload
+from sqlalchemy import or_
+from models import Notification
 
 import asyncio
+import json
 
 from pydantic import BaseModel, ConfigDict
 
@@ -21,6 +24,8 @@ class SafeUser(BaseModel):
     lastName: str
     username: str
     is_coach: bool
+    id: int
+
 
 class ActivityCreate(BaseModel):
     name: str
@@ -100,52 +105,159 @@ async def list_items(db: AsyncSession = Depends(get_db)):
 async def get_account(user: User = Depends(get_current_active_user)):
     return user
 
-@router.post("/update_account", response_model=SafeUser)
-async def update_account(user: User = Depends(get_current_active_user), data: UserUpdatable = Depends(UserUpdatable), db: AsyncSession = Depends(get_db)):
-        for k, v in data:
-            if v is not None:
-                setattr(user, k, v)
-        
-        await db.commit()
-        await db.refresh(user)
+@router.post("/update_account", response_model="SafeUser")
+async def update_account(
+    data: UserUpdatable,
+    user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    # 🔥 Check duplicates
+    if data.email or data.phone:
+        query = select(User).where(
+            and_(
+                User.id != user.id,
+                or_(
+                    User.email == data.email if data.email else False,
+                    User.phone == data.phone if data.phone else False,
+                )
+            )
+        )
+        existing = (await db.execute(query)).scalars().first()
 
-        return user
+        if existing:
+            raise HTTPException(
+                status_code=409,
+                detail="Email or phone already in use",
+            )
 
-@router.get("/notifications")
+    update_data = data.model_dump(exclude_unset=True)
+
+    for key, value in update_data.items():
+        setattr(user, key, value)
+
+    await db.commit()
+    await db.refresh(user)
+
+    return user
+
+
+@router.get("/notifications/stream")
 async def notification_stream(user: User = Depends(get_current_active_user)):
     async def event_publisher():
-
         queue = asyncio.Queue()
+
+        active_streams.pop(user.id, None)
         active_streams[user.id] = queue
 
         try:
             while True:
-                msg  = await queue.get()
-                yield f"data: {msg}\n\n"
-        except asyncio.CancelledError:
+                msg = await queue.get()
+                yield f"data: {json.dumps(msg)}\n\n"
+        finally:
             active_streams.pop(user.id, None)
-    
+
     return StreamingResponse(event_publisher(), media_type="text/event-stream")
 
 
 @router.post("/client-invite")
-async def invite_client(client_id:int ,coach: User = Depends(get_current_active_user) ,db: AsyncSession = Depends(get_db)):
+async def invite_client(
+    client_id: int,
+    coach: User = Depends(get_current_active_user),
+):
+    if client_id not in active_streams:
+        return {
+            "status": "offline",
+            "message": "User is not online, invite not sent"
+        }
 
-    invite = CoachInvites(
-        client_id = client_id,
-        coach_id = coach.id,
-        expires = datetime.now(timezone.utc) + timedelta(days = 10)
+    invite_payload = {
+        "type": "coach_invite",
+        "coach_id": coach.id,
+        "client_id": client_id,
+        "message": f"Coach {coach.id} invited you"
+    }
+
+    try:
+        await active_streams[client_id].put(invite_payload)
+    except Exception:
+        return {
+            "status": "failed",
+            "message": "Could not deliver invite"
+        }
+
+    return {
+        "status": "sent",
+        "message": "Invite delivered in real-time"
+    }
+
+
+@router.post("/coach/add-client")
+async def add_client(
+    client_id: int,
+    coach: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    # 1. Ensure user is a coach
+    if not coach.is_coach:
+        raise HTTPException(status_code=403, detail="Only coaches can add clients")
+
+    # 2. Check if client exists
+    client = await db.execute(
+        select(User).where(User.id == client_id)
+    )
+    client = client.scalar_one_or_none()
+
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+
+    # 3. Check if already linked
+    existing = await db.execute(
+        select(CoachLink).where(
+            CoachLink.coach_id == coach.id,
+            CoachLink.client_id == client_id
+        )
+    )
+    existing = existing.scalar_one_or_none()
+
+    if existing:
+        return {"status": "already_exists", "message": "Client already added"}
+
+    # 4. Create link
+    link = CoachLink(
+        coach_id=coach.id,
+        client_id=client_id
     )
 
-    db.add(invite)
+    db.add(link)
     await db.commit()
-    await db.refresh(invite)
 
-    if client_id in active_streams:
-        await active_streams[client_id].put(f"Coach {coach.id} sent you an invite!")
-        return {"status": "Client notified"}
-    
-    return {"status": "Invite saved, but client is offline (they'll see it next login)"}
+    return {
+        "status": "success",
+        "message": "Client added successfully"
+    }
+
+@router.delete("/coach/remove-client")
+async def remove_client(
+    client_id: int,
+    coach: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if not coach.is_coach:
+        raise HTTPException(status_code=403, detail="Only coaches allowed")
+
+    stmt = delete(CoachLink).where(
+        CoachLink.coach_id == coach.id,
+        CoachLink.client_id == client_id
+    )
+
+    result = await db.execute(stmt)
+
+    if result.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Client not found")
+
+    await db.commit()
+
+    return {"status": "client removed"}
 
 @router.post("/accept-invite")
 async def accept_invite(coach: int, client: User = Depends(get_current_active_user), db: AsyncSession = Depends(get_db)):
@@ -177,6 +289,19 @@ async def accept_invite(coach: int, client: User = Depends(get_current_active_us
 
 
     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="no valid invites or invites expired")
+
+@router.get("/notifications/history")
+async def get_notifications(
+    user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    res = await db.execute(
+        select(Notification)
+        .where(Notification.user_id == user.id)
+        .order_by(Notification.created_at.desc())
+    )
+
+    return res.scalars().all()
 
 @router.post("/activities", response_model=ActivityResponse)
 async def create_activity(

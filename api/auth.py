@@ -4,7 +4,7 @@ from typing import Annotated
 import jwt
 import secrets
 from contextlib import asynccontextmanager
-from fastapi import APIRouter, Depends, HTTPException, status, Response, Cookie, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, Response, Cookie, BackgroundTasks, FastAPI
 from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,6 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import select,delete,insert, or_, and_
 from jwt.exceptions import InvalidTokenError
 from urllib.parse import urlencode
+from sqlalchemy import or_
 
 from pwdlib import PasswordHash
 from pydantic import BaseModel, EmailStr
@@ -67,10 +68,12 @@ class UserCreate(BaseModel):
     lastName: str
     username: str
     password: str
+    is_coach: bool = False
 
 class Token(BaseModel):
     access_token: str
     token_type: str
+    is_coach: bool
 
 class TokenData(BaseModel):
     username: str | None = None
@@ -125,7 +128,7 @@ async def add_User(db:AsyncSession, user_data: UserCreate) -> User:
         lastName = user_data.lastName,
         email = user_data.email,
         hashedPass = hashed_pass,
-        is_coach = False,
+        is_coach=user_data.is_coach,
         authProvider = AuthProvider.LOCAL
     )
     db.add(user)
@@ -195,7 +198,7 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)], db: As
         if username is None:
             raise credentials_exception
         token_data = TokenData(username=username)
-    except jwt.PyJWKError:
+    except jwt.PyJWTError:
         raise credentials_exception
     user = await get_user_from_username(db, username=token_data.username)
     if user is None:
@@ -417,6 +420,7 @@ async def update_pass(token: str, new_password: str, db: AsyncSession = Depends(
         raise HTTPException(status_code=400, detail="Invalid session")
 
 
+
 #creates account using user inputted data
 #returns jwt access token
 @router.post("/register")
@@ -449,7 +453,11 @@ async def register(response: Response, userData: UserCreate, db: AsyncSession = 
 
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(data={"sub": user.username}, expire_delta=access_token_expires)
-    return Token(access_token= access_token, token_type="bearer")
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "is_coach": user.is_coach
+    }
 
 #returns jwt access token if credentials are correct
 @router.post("/login")
@@ -473,7 +481,11 @@ async def login(response: Response, form_data: Annotated[OAuth2PasswordRequestFo
     
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(data={"sub": user.username}, expire_delta=access_token_expires)
-    return Token(access_token= access_token, token_type="bearer")
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "is_coach": user.is_coach
+    }
 
 @router.post("/refresh")
 async def refresh_access(response: Response, refresh_token: Annotated[str | None, Cookie()] = None, db: AsyncSession = Depends(get_db)):

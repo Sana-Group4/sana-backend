@@ -94,6 +94,16 @@ class CoachInvites(Base):
     client_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     expires: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=False)
 
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, index=True)
+    message = Column(String)
+    type = Column(String)
+    is_read = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 class Biometric(Base):
     __tablename__ = "biometrics"
 
