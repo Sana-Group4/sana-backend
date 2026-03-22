@@ -64,6 +64,12 @@ class UserUpdatable(BaseModel):
     firstName: str | None = None
     is_coach: bool | None = None
 
+class CoachInfoUpdate(BaseModel):
+    description: str | None = None
+    focus: str | None = None
+    specialties: str | None = None
+    notes: str | None = None
+
 class ClientBasicInfo(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -240,6 +246,38 @@ async def send_message(other_id: int , user:User = Depends(get_current_active_us
         return {"status": "no messages"}
     
     return entries
+
+@router.post("/update-coach-info")
+async def update_coach_info(coach_info: CoachInfoUpdate, user: User = Depends(get_current_active_user), db: AsyncSession = Depends(get_db)):
+    if not user.is_coach:
+        return HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="only coaches can use this")
+    
+    query = select(CoachInfo).where(CoachInfo.coach_id == user.id)
+
+    res = await db.execute(query)
+    info = res.scalars().first()
+
+    if not info:
+        new_info = CoachInfo(
+            coach_id = user.id,
+            description = coach_info.description,
+            focus = coach_info.focus,
+            specialties = coach_info.specialties,
+            notes = coach_info.notes
+        )
+
+        db.add(new_info)
+        await db.commit()
+        return new_info
+
+    for k, v in coach_info:
+            if v is not None:
+                setattr(info, k, v)
+        
+    await db.commit()
+    await db.refresh(user)
+
+    return info
 
 
 @router.get("/coach-get-sessions")

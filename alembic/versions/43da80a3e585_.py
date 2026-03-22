@@ -26,7 +26,7 @@ def upgrade() -> None:
     sa.Column('description', sa.String(length=200), nullable=True),
     sa.Column('focus', sa.String(length=200), nullable=True),
     sa.Column('specialties', sa.String(length=200), nullable=True),
-    sa.Column('Notes', sa.String(length=200), nullable=True),
+    sa.Column('notes', sa.String(length=200), nullable=True),
     sa.ForeignKeyConstraint(['coach_id'], ['users.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('coach_id')
     )

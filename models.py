@@ -109,7 +109,7 @@ class CoachInfo(Base):
     description: Mapped[str] = mapped_column(String(200), nullable= True)
     focus: Mapped[str] = mapped_column(String(200), nullable= True)
     specialties: Mapped[str] = mapped_column(String(200), nullable= True)
-    Notes: Mapped[str] = mapped_column(String(200), nullable= True)
+    notes: Mapped[str] = mapped_column(String(200), nullable= True)
 
 class CoachMessages(Base):
     __tablename__="coach_messages"
