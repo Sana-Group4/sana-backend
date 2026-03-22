@@ -154,7 +154,6 @@ def create_access_token(data: dict, expire_delta: timedelta | None = None):
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
-
 #creates and adds refresh token to database, returns values required to make refresh cookie
 async def create_refresh_token(user, db: AsyncSession):
     
@@ -238,7 +237,7 @@ async def get_google_user_data(code):
         return profile_response.json()
 
 @asynccontextmanager
-async def auth_lifespan(app: FastAPI):
+async def auth_lifespan(app):
 
     task = asyncio.create_task(reset_token_cleanup())
     yield

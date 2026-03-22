@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, delete
+from sqlalchemy import select, and_, delete, or_
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import selectinload
 
@@ -10,7 +10,7 @@ import asyncio
 from pydantic import BaseModel, ConfigDict
 
 from db import get_db
-from models import Item, User, CoachLink, Activity, Biometric, BiometricType, ActivityStatus, ActivityType, CoachInvites
+from models import Item, User, CoachLink, Activity, Biometric, BiometricType, ActivityStatus, ActivityType, CoachInvites, Session, CoachInfo, CoachMessages
 from api.auth import get_current_active_user, Token
 
 class SafeUser(BaseModel):
@@ -20,6 +20,7 @@ class SafeUser(BaseModel):
     firstName: str
     lastName: str
     username: str
+    id: int
     is_coach: bool
 
 class ActivityCreate(BaseModel):
@@ -48,6 +49,13 @@ class ActivityResponse(BaseModel):
     due_at: datetime | None
     status: ActivityStatus
 
+class SessionInfo(BaseModel):
+    client_id: int
+    title: str
+    desc: str
+    date_time: datetime
+    duration: int = 0
+
 
 class UserUpdatable(BaseModel):
     email: str | None = None
@@ -55,6 +63,12 @@ class UserUpdatable(BaseModel):
     lastName: str | None = None
     firstName: str | None = None
     is_coach: bool | None = None
+
+class CoachInfoUpdate(BaseModel):
+    description: str | None = None
+    focus: str | None = None
+    specialties: str | None = None
+    notes: str | None = None
 
 class ClientBasicInfo(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -76,6 +90,10 @@ class BiometricVectorOut(BaseModel):
     biometric_type: BiometricType
     t: list[datetime]
     y: list[float | int | None]
+
+class Message(BaseModel):
+    content: str
+    receiver_id: int
 
 active_streams={}
 
@@ -101,14 +119,24 @@ async def get_account(user: User = Depends(get_current_active_user)):
     return user
 
 @router.post("/update_account", response_model=SafeUser)
-async def update_account(user: User = Depends(get_current_active_user), data: UserUpdatable = Depends(UserUpdatable), db: AsyncSession = Depends(get_db)):
+async def update_account(data: UserUpdatable, user: User = Depends(get_current_active_user), db: AsyncSession = Depends(get_db)):
+
         for k, v in data:
             if v is not None:
                 setattr(user, k, v)
         
+        if data.is_coach:
+            new_info = CoachInfo(
+            coach_id = user.id,
+            )
+            db.add(new_info)
+        
+        if data.is_coach == False:
+            query = delete(CoachInfo).where(CoachInfo.coach_id == user.id)
+            await db.execute(query)
+
         await db.commit()
         await db.refresh(user)
-
         return user
 
 @router.get("/notifications")
@@ -127,9 +155,177 @@ async def notification_stream(user: User = Depends(get_current_active_user)):
     
     return StreamingResponse(event_publisher(), media_type="text/event-stream")
 
+@router.post("/book-session")
+async def book_session(session_info:SessionInfo = Depends(SessionInfo), coach: User = Depends(get_current_active_user),db: AsyncSession = Depends(get_db)):
+    session = Session(
+        client_id = session_info.client_id,
+        coach_id = coach.id,
+        date_time = session_info.date_time,
+        session_title = session_info.title,
+        session_desc = session_info.desc,
+        session_duration = session_info.duration
+    )
+
+    if session.session_duration:
+        query = select(Session).where(and_(
+            Session.date_time >= session.date_time.astimezone(tz=timezone.utc), Session.date_time <= session.date_time.astimezone(tz=timezone.utc)+timedelta(minutes=session.session_duration)
+        ))
+    
+    res = await db.execute(query)
+    entry = res.scalars().first()
+
+    if entry:
+        return {"status": "session already booked in given time slot"}
+
+    db.add(session)
+    await db.commit()
+    return {"status": "session added successfully"}
+
+@router.get("/coach-info")
+async def get_coach_info(coach_id: int|None = None, user: User = Depends(get_current_active_user),db: AsyncSession = Depends(get_db)):
+    to_get = None
+    if coach_id == None:
+        to_get = user.id
+    else:
+        to_get = coach_id
+
+        auth_query = select(CoachLink).where(
+            and_(CoachLink.coach_id == to_get, CoachLink.client_id == user.id)
+        )
+        res = await db.execute(auth_query)
+        entry = res.scalars().first()
+        if not entry:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="no link found with provided coach")
+    
+    query = select(CoachInfo).where(CoachInfo.coach_id == to_get)
+
+    res = await db.execute(query)
+
+    entry = res.scalars().first()
+
+    if not entry:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Error: no coach info found")
+
+    return entry
+
+@router.get("/client-get-sessions")
+async def client_get_sessions(coach_id: int, user: User = Depends(get_current_active_user),db: AsyncSession = Depends(get_db)):
+    query = select(Session).where(
+        and_(Session.coach_id == coach_id, Session.client_id == user.id)
+        )
+    
+    res = await db.execute(query)
+    entry = res.scalars().all()
+
+    if not entry:
+        return {"status": "No bookings registered for this coach"}
+    
+    return entry
+
+@router.post("/send_message")
+async def send_message(message:Message, user:User = Depends(get_current_active_user), db: AsyncSession = Depends(get_db)):
+    user1_id = min(message.receiver_id, user.id)
+    user2_id = max(message.receiver_id, user.id)
+    new_message = CoachMessages(
+        user_1 = user1_id,
+        user_2 = user2_id,
+        time_sent = datetime.now(timezone.utc),
+        content = message.content
+    )
+    db.add(new_message)
+    await db.commit()
+
+    #need to add notifications
+
+    return {"status": "success"}
+
+@router.get("/get_messages")
+async def send_message(other_id: int , user:User = Depends(get_current_active_user), db: AsyncSession = Depends(get_db)):
+    userid_1 = min(other_id, user.id)
+    userid_2 = max(other_id, user.id)
+
+    query = select(CoachMessages).where(and_(
+        CoachMessages.user_1 == userid_1, CoachMessages.user_2 == userid_2
+    ))
+
+    res = await db.execute(query)
+
+    entries = res.scalars().all()
+
+    if not entries:
+        return {"status": "no messages"}
+    
+    return entries
+
+@router.post("/update-coach-info")
+async def update_coach_info(coach_info: CoachInfoUpdate, user: User = Depends(get_current_active_user), db: AsyncSession = Depends(get_db)):
+    if not user.is_coach:
+        return HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="only coaches can use this")
+    
+    query = select(CoachInfo).where(CoachInfo.coach_id == user.id)
+
+    res = await db.execute(query)
+    info = res.scalars().first()
+
+    if not info:
+        new_info = CoachInfo(
+            coach_id = user.id,
+            description = coach_info.description,
+            focus = coach_info.focus,
+            specialties = coach_info.specialties,
+            notes = coach_info.notes
+        )
+
+        db.add(new_info)
+        await db.commit()
+        return new_info
+
+    for k, v in coach_info:
+            if v is not None:
+                setattr(info, k, v)
+        
+    await db.commit()
+    await db.refresh(user)
+
+    return info
+
+
+@router.get("/coach-get-sessions")
+async def coach_get_sessions(client_id: int, user: User = Depends(get_current_active_user),db: AsyncSession = Depends(get_db)):
+    query = select(Session).where(
+        and_(Session.coach_id == user.id, Session.client_id == client_id)
+        )
+    
+    res = await db.execute(query)
+    entry = res.scalars().all()
+
+    if not entry:
+        return {"status": "No bookings registered for this client"}
+    
+    return entry
+
+@router.post("/remove-client")
+async def remove_client(client_id: int, coach: User = Depends(get_current_active_user) ,db: AsyncSession = Depends(get_db)):
+    if not coach.is_coach:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="this feature is only available to coaches")
+
+    query = delete(CoachLink).where(and_(
+        CoachLink.client_id == client_id,
+        CoachLink.coach_id == coach.id
+    ))
+
+    res = await db.execute(query)
+
+    if res:
+        await db.commit()
+        return {"status": "removed client successfully"}
+    
+    return {"status": "No client link found"}    
 
 @router.post("/client-invite")
 async def invite_client(client_id:int ,coach: User = Depends(get_current_active_user) ,db: AsyncSession = Depends(get_db)):
+    if not coach.is_coach:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="this feature is only available to coaches")
 
     invite = CoachInvites(
         client_id = client_id,
@@ -146,6 +342,15 @@ async def invite_client(client_id:int ,coach: User = Depends(get_current_active_
         return {"status": "Client notified"}
     
     return {"status": "Invite saved, but client is offline (they'll see it next login)"}
+
+@router.get("/get-coach-invites")
+async def get_coach_invites(user: User = Depends(get_current_active_user), db: AsyncSession = Depends(get_db)):
+    query = select(CoachInvites). where(
+        CoachInvites.client_id == user.id
+    )
+    res = await db.execute(query)
+    entries = res.scalars().all()
+    return entries
 
 @router.post("/accept-invite")
 async def accept_invite(coach: int, client: User = Depends(get_current_active_user), db: AsyncSession = Depends(get_db)):
