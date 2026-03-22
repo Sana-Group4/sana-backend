@@ -10,7 +10,7 @@ import asyncio
 from pydantic import BaseModel, ConfigDict
 
 from db import get_db
-from models import Item, User, CoachLink, Activity, Biometric, BiometricType, ActivityStatus, ActivityType, CoachInvites, Session, CoachInfo
+from models import Item, User, CoachLink, Activity, Biometric, BiometricType, ActivityStatus, ActivityType, CoachInvites, Session, CoachInfo, CoachMessages
 from api.auth import get_current_active_user, Token
 
 class SafeUser(BaseModel):
@@ -85,6 +85,10 @@ class BiometricVectorOut(BaseModel):
     t: list[datetime]
     y: list[float | int | None]
 
+class Message(BaseModel):
+    content: str
+    receiver_id: int
+
 active_streams={}
 
 router = APIRouter(prefix="/api")
@@ -135,8 +139,6 @@ async def notification_stream(user: User = Depends(get_current_active_user)):
     
     return StreamingResponse(event_publisher(), media_type="text/event-stream")
 
-
-
 @router.post("/book-session")
 async def book_session(session_info:SessionInfo = Depends(SessionInfo), coach: User = Depends(get_current_active_user),db: AsyncSession = Depends(get_db)):
     session = Session(
@@ -148,9 +150,9 @@ async def book_session(session_info:SessionInfo = Depends(SessionInfo), coach: U
         session_duration = session_info.duration
     )
 
-    if session.duration:
+    if session.session_duration:
         query = select(Session).where(and_(
-            Session.date_time >= session.date_time.astimezone(tz="utc"), Session.date_time <= session.date_time.astimezone(tz="utc")+timedelta.min(session.session_duration)
+            Session.date_time >= session.date_time.astimezone(tz=timezone.utc), Session.date_time <= session.date_time.astimezone(tz=timezone.utc)+timedelta(minutes=session.session_duration)
         ))
     
     res = await db.execute(query)
@@ -160,7 +162,8 @@ async def book_session(session_info:SessionInfo = Depends(SessionInfo), coach: U
         return {"status": "session already booked in given time slot"}
 
     db.add(session)
-    return {"status": "session addes successfully"}
+    await db.commit()
+    return {"status": "session added successfully"}
 
 @router.get("/coach-info")
 async def get_coach_info(coach_id: int|None = None, user: User = Depends(get_current_active_user),db: AsyncSession = Depends(get_db)):
@@ -196,13 +199,62 @@ async def client_get_sessions(coach_id: int, user: User = Depends(get_current_ac
         )
     
     res = await db.execute(query)
-    entry = res.scalars()
+    entry = res.scalars().all()
 
-    if not entry.first():
+    if not entry:
         return {"status": "No bookings registered for this coach"}
     
-    return res.all()
+    return entry
+
+@router.post("/send_message")
+async def send_message(message:Message, user:User = Depends(get_current_active_user), db: AsyncSession = Depends(get_db)):
+    user1_id = min(message.receiver_id, user.id)
+    user2_id = max(message.receiver_id, user.id)
+    new_message = CoachMessages(
+        user_1 = user1_id,
+        user_2 = user2_id,
+        time_sent = datetime.now(timezone.utc),
+        content = message.content
+    )
+    db.add(new_message)
+    await db.commit()
+
+    #need to add notifications
+
+    return {"status": "success"}
+
+@router.get("/get_messages")
+async def send_message(other_id: int , user:User = Depends(get_current_active_user), db: AsyncSession = Depends(get_db)):
+    userid_1 = min(other_id, user.id)
+    userid_2 = max(other_id, user.id)
+
+    query = select(CoachMessages).where(and_(
+        CoachMessages.user_1 == userid_1, CoachMessages.user_2 == userid_2
+    ))
+
+    res = await db.execute(query)
+
+    entries = res.scalars().all()
+
+    if not entries:
+        return {"status": "no messages"}
     
+    return entries
+
+
+@router.get("/coach-get-sessions")
+async def coach_get_sessions(client_id: int, user: User = Depends(get_current_active_user),db: AsyncSession = Depends(get_db)):
+    query = select(Session).where(
+        and_(Session.coach_id == user.id, Session.client_id == client_id)
+        )
+    
+    res = await db.execute(query)
+    entry = res.scalars().all()
+
+    if not entry:
+        return {"status": "No bookings registered for this client"}
+    
+    return entry
 
 @router.post("/remove-client")
 async def remove_client(client_id: int, coach: User = Depends(get_current_active_user) ,db: AsyncSession = Depends(get_db)):
@@ -215,11 +267,9 @@ async def remove_client(client_id: int, coach: User = Depends(get_current_active
     ))
 
     res = await db.execute(query)
-    entry = res.scalars().first()
 
-    if entry:
-        del entry
-        db.commit()
+    if res:
+        await db.commit()
         return {"status": "removed client successfully"}
     
     return {"status": "No client link found"}    

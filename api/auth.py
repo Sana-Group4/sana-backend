@@ -237,7 +237,7 @@ async def get_google_user_data(code):
         return profile_response.json()
 
 @asynccontextmanager
-async def auth_lifespan(app: FastAPI):
+async def auth_lifespan(app):
 
     task = asyncio.create_task(reset_token_cleanup())
     yield
