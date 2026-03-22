@@ -119,14 +119,24 @@ async def get_account(user: User = Depends(get_current_active_user)):
     return user
 
 @router.post("/update_account", response_model=SafeUser)
-async def update_account(user: User = Depends(get_current_active_user), data: UserUpdatable = Depends(UserUpdatable), db: AsyncSession = Depends(get_db)):
+async def update_account(data: UserUpdatable, user: User = Depends(get_current_active_user), db: AsyncSession = Depends(get_db)):
+
         for k, v in data:
             if v is not None:
                 setattr(user, k, v)
         
+        if data.is_coach:
+            new_info = CoachInfo(
+            coach_id = user.id,
+            )
+            db.add(new_info)
+        
+        if data.is_coach == False:
+            query = delete(CoachInfo).where(CoachInfo.coach_id == user.id)
+            await db.execute(query)
+
         await db.commit()
         await db.refresh(user)
-
         return user
 
 @router.get("/notifications")
