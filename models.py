@@ -77,6 +77,12 @@ class Activity(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     assigned_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     assigned_by_coach: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    activity_type : Mapped[ActivityType] = mapped_column(Enum(ActivityType, values_callable=lambda x: [e.value for e in x]), unique=False, nullable= False)
+    target_value: Mapped[int] = mapped_column(Integer, nullable=False, default=-1)
+    progress_value: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    unit : Mapped[str] = mapped_column(String(40), nullable=False, default="None")
+    due_at : Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    status : Mapped[ActivityStatus] = mapped_column(Enum(ActivityStatus, values_callable=lambda x: [e.value for e in x]), unique=False, nullable= False)
     user: Mapped["User"] = relationship("User", foreign_keys=[user_id], back_populates="activities")
 
 class CoachLink(Base):
