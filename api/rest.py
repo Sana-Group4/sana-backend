@@ -1,3 +1,5 @@
+
+from sqlalchemy.orm import selectinload
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -571,3 +573,27 @@ async def get_biometric_vector(
         "t": [r.recorded_at for r in rows],
         "y": [r.value_float if r.value_float is not None else r.value_int for r in rows],
     }
+
+@router.get("/client/coaches", response_model=list[ClientBasicInfo])
+async def get_client_coaches(user: User = Depends(get_current_active_user), db: AsyncSession = Depends(get_db)):
+    """
+    Returns a list of all coaches linked to the current client.
+    """
+    # Query all CoachLink entries where client_id is the current user
+    query = select(CoachLink).where(CoachLink.client_id == user.id).options(selectinload(CoachLink.coach))
+    res = await db.execute(query)
+    links = res.scalars().all()
+    # Extract coach user info for each link
+    coaches = []
+    for link in links:
+        coach = link.coach
+        if coach:
+            coaches.append(ClientBasicInfo(
+                id=coach.id,
+                username=coach.username,
+                firstName=coach.firstName,
+                lastName=coach.lastName,
+                email=coach.email,
+                phone=coach.phone
+            ))
+    return coaches
