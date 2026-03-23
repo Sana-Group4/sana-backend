@@ -383,6 +383,20 @@ async def accept_invite(coach: int, client: User = Depends(get_current_active_us
 
     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="no valid invites or invites expired")
 
+
+@router.post("/reject-invite")
+async def reject_invite(coach: int, client: User = Depends(get_current_active_user), db: AsyncSession = Depends(get_db)):
+    delete_query = delete(CoachInvites).where(
+        and_(CoachInvites.coach_id == coach, CoachInvites.client_id == client.id)
+    )
+    result = await db.execute(delete_query)
+    await db.commit()
+    if result.rowcount > 0:
+        return {"status": "invite rejected and deleted"}
+    else:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="invite not found")
+
+
 @router.post("/activities", response_model=ActivityResponse)
 async def create_activity(
     activity: ActivityCreate,
