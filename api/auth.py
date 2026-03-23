@@ -71,6 +71,7 @@ class UserCreate(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str
+    is_coach: bool
 
 class TokenData(BaseModel):
     username: str | None = None
@@ -486,7 +487,7 @@ async def login(response: Response, form_data: Annotated[OAuth2PasswordRequestFo
     
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(data={"sub": user.username}, expire_delta=access_token_expires)
-    return Token(access_token= access_token, token_type="bearer")
+    return Token(access_token=access_token, token_type="bearer", is_coach=user.is_coach)
 
 @router.post("/refresh")
 async def refresh_access(response: Response, refresh_token: Annotated[str | None, Cookie()] = None, db: AsyncSession = Depends(get_db)):
