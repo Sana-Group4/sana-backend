@@ -71,7 +71,6 @@ class UserCreate(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str
-    is_coach: bool
 
 class TokenData(BaseModel):
     username: str | None = None
