@@ -56,6 +56,9 @@ class SessionInfo(BaseModel):
     date_time: datetime
     duration: int = 0
 
+class Notification(BaseModel):
+    type: str 
+    content: str
 
 class UserUpdatable(BaseModel):
     email: str | None = None
@@ -148,12 +151,13 @@ async def notification_stream(user: User = Depends(get_current_active_user)):
 
         try:
             while True:
-                msg  = await queue.get()
-                yield f"data: {msg}\n\n"
+                msg: Notification  = await queue.get()
+                json_data = msg.model_dump_json()
+                yield f"data: {json_data}"
         except asyncio.CancelledError:
             active_streams.pop(user.id, None)
     
-    return StreamingResponse(event_publisher(), media_type="text/event-stream")
+    return StreamingResponse(event_publisher(), media_type="application/x-ndjson")
 
 @router.post("/book-session")
 async def book_session(session_info:SessionInfo = Depends(SessionInfo), coach: User = Depends(get_current_active_user),db: AsyncSession = Depends(get_db)):
@@ -179,6 +183,8 @@ async def book_session(session_info:SessionInfo = Depends(SessionInfo), coach: U
 
     db.add(session)
     await db.commit()
+
+    await active_streams[session_info.client_id].put(Notification(type="session_booking", content=f"{coach.id}"))
     return {"status": "session added successfully"}
 
 @router.get("/coach-info")
@@ -236,6 +242,8 @@ async def send_message(message:Message, user:User = Depends(get_current_active_u
     await db.commit()
 
     #need to add notifications
+
+    await active_streams[message.receiver_id].put(Notification(type="message", content=f"{user.id}:{message.content}"))
 
     return {"status": "success"}
 
@@ -338,7 +346,7 @@ async def invite_client(client_id:int ,coach: User = Depends(get_current_active_
     await db.refresh(invite)
 
     if client_id in active_streams:
-        await active_streams[client_id].put(f"Coach {coach.id} sent you an invite!")
+        await active_streams[client_id].put(Notification(type="invite", content=f"{coach.id}"))
         return {"status": "Client notified"}
     
     return {"status": "Invite saved, but client is offline (they'll see it next login)"}
