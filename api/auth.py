@@ -192,10 +192,24 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)], db: As
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username = payload.get("sub")
         if username is None:
-            raise credentials_exception
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={"msg": "Could not validate credentials", "error_code": 1},
+                headers={"WWW-Authenticate": "Bearer"},
+            )
         token_data = TokenData(username=username)
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"msg": "Token has expired", "error_code": 1},
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     except jwt.PyJWKError:
-        raise credentials_exception
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"msg": "Could not validate credentials", "error_code": 1},
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     user = await get_user_from_username(db, username=token_data.username)
     if user is None:
         raise credentials_exception
