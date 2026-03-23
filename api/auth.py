@@ -215,7 +215,7 @@ async def get_google_user_data(code):
     async with httpx.AsyncClient() as client:
         response = await client.post("https://oauth2.googleapis.com/token", data={
             "code": code,
-            "client_id": "408392816898-84qrjq4b9d5kmopehjg150k6t4hu9b69.apps.googleusercontent.com",
+            "client_id": os.getenv("GOOGLE_CLIENT_ID"),
             "client_secret": secret,
             "redirect_uri": "http://localhost:8000/auth/google/callback",
             "grant_type": "authorization_code"
@@ -248,7 +248,7 @@ async def auth_lifespan(app):
 async def google_login():
     google_url = "https://accounts.google.com/o/oauth2/v2/auth"
     params = {
-        "client_id": "408392816898-84qrjq4b9d5kmopehjg150k6t4hu9b69.apps.googleusercontent.com",
+        "client_id": os.getenv("GOOGLE_CLIENT_ID"),
         "redirect_uri": "http://localhost:8000/auth/google/callback",
         "response_type": "code",
         "scope": "openid email profile",
