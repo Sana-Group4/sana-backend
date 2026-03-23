@@ -71,6 +71,7 @@ class UserCreate(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str
+    is_coach: bool
 
 class TokenData(BaseModel):
     username: str | None = None
@@ -192,10 +193,24 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)], db: As
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username = payload.get("sub")
         if username is None:
-            raise credentials_exception
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={"msg": "Could not validate credentials", "error_code": 1},
+                headers={"WWW-Authenticate": "Bearer"},
+            )
         token_data = TokenData(username=username)
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"msg": "Token has expired", "error_code": 1},
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     except jwt.PyJWKError:
-        raise credentials_exception
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"msg": "Could not validate credentials", "error_code": 1},
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     user = await get_user_from_username(db, username=token_data.username)
     if user is None:
         raise credentials_exception
@@ -215,7 +230,7 @@ async def get_google_user_data(code):
     async with httpx.AsyncClient() as client:
         response = await client.post("https://oauth2.googleapis.com/token", data={
             "code": code,
-            "client_id": "408392816898-84qrjq4b9d5kmopehjg150k6t4hu9b69.apps.googleusercontent.com",
+            "client_id": os.getenv("GOOGLE_CLIENT_ID"),
             "client_secret": secret,
             "redirect_uri": "http://localhost:8000/auth/google/callback",
             "grant_type": "authorization_code"
@@ -248,7 +263,7 @@ async def auth_lifespan(app):
 async def google_login():
     google_url = "https://accounts.google.com/o/oauth2/v2/auth"
     params = {
-        "client_id": "408392816898-84qrjq4b9d5kmopehjg150k6t4hu9b69.apps.googleusercontent.com",
+        "client_id": os.getenv("GOOGLE_CLIENT_ID"),
         "redirect_uri": "http://localhost:8000/auth/google/callback",
         "response_type": "code",
         "scope": "openid email profile",
@@ -472,7 +487,7 @@ async def login(response: Response, form_data: Annotated[OAuth2PasswordRequestFo
     
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(data={"sub": user.username}, expire_delta=access_token_expires)
-    return Token(access_token= access_token, token_type="bearer")
+    return Token(access_token=access_token, token_type="bearer", is_coach=user.is_coach)
 
 @router.post("/refresh")
 async def refresh_access(response: Response, refresh_token: Annotated[str | None, Cookie()] = None, db: AsyncSession = Depends(get_db)):

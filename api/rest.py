@@ -1,3 +1,5 @@
+
+from sqlalchemy.orm import selectinload
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -391,6 +393,20 @@ async def accept_invite(coach: int, client: User = Depends(get_current_active_us
 
     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="no valid invites or invites expired")
 
+
+@router.post("/reject-invite")
+async def reject_invite(coach: int, client: User = Depends(get_current_active_user), db: AsyncSession = Depends(get_db)):
+    delete_query = delete(CoachInvites).where(
+        and_(CoachInvites.coach_id == coach, CoachInvites.client_id == client.id)
+    )
+    result = await db.execute(delete_query)
+    await db.commit()
+    if result.rowcount > 0:
+        return {"status": "invite rejected and deleted"}
+    else:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="invite not found")
+
+
 @router.post("/activities", response_model=ActivityResponse)
 async def create_activity(
     activity: ActivityCreate,
@@ -565,3 +581,27 @@ async def get_biometric_vector(
         "t": [r.recorded_at for r in rows],
         "y": [r.value_float if r.value_float is not None else r.value_int for r in rows],
     }
+
+@router.get("/client/coaches", response_model=list[ClientBasicInfo])
+async def get_client_coaches(user: User = Depends(get_current_active_user), db: AsyncSession = Depends(get_db)):
+    """
+    Returns a list of all coaches linked to the current client.
+    """
+    # Query all CoachLink entries where client_id is the current user
+    query = select(CoachLink).where(CoachLink.client_id == user.id).options(selectinload(CoachLink.coach))
+    res = await db.execute(query)
+    links = res.scalars().all()
+    # Extract coach user info for each link
+    coaches = []
+    for link in links:
+        coach = link.coach
+        if coach:
+            coaches.append(ClientBasicInfo(
+                id=coach.id,
+                username=coach.username,
+                firstName=coach.firstName,
+                lastName=coach.lastName,
+                email=coach.email,
+                phone=coach.phone
+            ))
+    return coaches
