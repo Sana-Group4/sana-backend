@@ -480,6 +480,23 @@ async def get_activities(
     )
     return result.scalars().all()
 
+@router.delete("/activities/{activity_id}")
+async def delete_activity(
+    activity_id: int,
+    user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    query = select(Activity).where(
+        and_(Activity.id == activity_id, Activity.user_id == user.id)
+    )
+    res = await db.execute(query)
+    activity = res.scalars().first()
+    if not activity:
+        raise HTTPException(status_code=404, detail="Activity not found")
+    await db.delete(activity)
+    await db.commit()
+    return {"status": "deleted"}
+
 @router.get("/coach/clients", response_model=list[ClientBasicInfo])
 async def get_coach_clients(
     db: AsyncSession = Depends(get_db),
