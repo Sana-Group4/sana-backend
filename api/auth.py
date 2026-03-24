@@ -105,7 +105,7 @@ async def get_user(db: AsyncSession, username: str) -> User | None:
     user = result.scalars().first()
 
     if user == None and username.isdigit():
-        result = await db.execute(select(User).where(User.phone == int(username)))
+        result = await db.execute(select(User).where(User.phone == username))
         user = result.scalars().first()
 
     return user

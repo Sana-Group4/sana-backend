@@ -18,7 +18,7 @@ from api.auth import get_current_active_user, Token
 class SafeUser(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     email: str
-    phone: int | None = None
+    phone: str | None = None
     firstName: str
     lastName: str
     username: str
@@ -64,7 +64,7 @@ class Notification(BaseModel):
 
 class UserUpdatable(BaseModel):
     email: str | None = None
-    phone: int | None = None
+    phone: str | None = None
     lastName: str | None = None
     firstName: str | None = None
     is_coach: bool | None = None
@@ -82,7 +82,7 @@ class ClientBasicInfo(BaseModel):
     firstName: str
     lastName: str
     email: str | None = None
-    phone: int | None = None
+    phone: str | None = None
 
 class BiometricVectorIn(BaseModel):
     user_id: int
@@ -126,7 +126,7 @@ async def get_account(user: User = Depends(get_current_active_user)):
 @router.post("/update_account", response_model=SafeUser)
 async def update_account(data: UserUpdatable, user: User = Depends(get_current_active_user), db: AsyncSession = Depends(get_db)):
 
-        for k, v in data:
+        for k, v in data.model_dump().items():
             if v is not None:
                 setattr(user, k, v)
         

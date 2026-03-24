@@ -1,8 +1,8 @@
-"""initial schema
+"""initial
 
-Revision ID: b2f24f7c50cc
+Revision ID: 267dcdfff6da
 Revises: 
-Create Date: 2026-03-24 14:48:02.827946
+Create Date: 2026-03-24 15:37:06.309319
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'b2f24f7c50cc'
+revision: str = '267dcdfff6da'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -32,7 +32,7 @@ def upgrade() -> None:
     sa.Column('firstName', sa.String(length=50), nullable=False),
     sa.Column('lastName', sa.String(length=50), nullable=False),
     sa.Column('email', sa.String(length=100), nullable=True),
-    sa.Column('phone', sa.Integer(), nullable=True),
+    sa.Column('phone', sa.String(length=20), nullable=True),
     sa.Column('hashedPass', sa.String(length=255), nullable=True),
     sa.Column('is_coach', sa.Boolean(), nullable=False),
     sa.Column('authProvider', sa.Enum('Local', 'Google', name='authprovider'), nullable=False),
@@ -63,7 +63,7 @@ def upgrade() -> None:
     op.create_table('biometrics',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('user_id', sa.Integer(), nullable=False),
-    sa.Column('biometric_type', sa.Enum('heart_rate_bpm', 'workout_session', 'weight_kg', 'steps_per_day', 'calories_per_day', name='biometrictype'), nullable=False),
+    sa.Column('biometric_type', sa.Enum('heart_rate_bpm', 'workout_session', 'weight_kg', 'steps_per_day', 'calories_per_day', name='biometricstype'), nullable=False),
     sa.Column('recorded_at', sa.DateTime(timezone=True), nullable=False),
     sa.Column('value_float', sa.Float(), nullable=True),
     sa.Column('value_int', sa.Integer(), nullable=True),
