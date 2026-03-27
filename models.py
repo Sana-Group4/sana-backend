@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import Column, String,Integer,DateTime,ForeignKey,Enum,Float,Index, Boolean
+from sqlalchemy import Column, String,Integer,DateTime,ForeignKey,Enum,Float,Index, Boolean, VARCHAR
 import enum
 from db import Base
 from datetime import datetime
@@ -29,7 +29,7 @@ class User(Base):
     firstName: Mapped[str] = mapped_column(String(50), unique=False, nullable=False)
     lastName: Mapped[str] = mapped_column(String(50), unique=False, nullable=False)
     email: Mapped[str] = mapped_column(String(100), unique=True, nullable=True)
-    phone: Mapped[int] = mapped_column(Integer(), unique = True, nullable=True)
+    phone: Mapped[str] = mapped_column(String(20), unique=True, nullable=True)
     hashedPass: Mapped[str] = mapped_column(String(255), unique=False, nullable=True)
     is_coach: Mapped[bool] = mapped_column(Boolean, unique=False, nullable=False, default=False )
 
@@ -74,9 +74,31 @@ class Activity(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str] = mapped_column(String(500), nullable=False)
+
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     assigned_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     assigned_by_coach: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    activity_type: Mapped[ActivityType] = mapped_column(
+        Enum(ActivityType, values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+        default=ActivityType.CUSTOM
+    )
+    target_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    progress_value: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    unit: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
+    assigned_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.now()
+    )
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    status: Mapped[ActivityStatus] = mapped_column(
+        Enum(ActivityStatus, values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+        default=ActivityStatus.PENDING
+    )
+
     user: Mapped["User"] = relationship("User", foreign_keys=[user_id], back_populates="activities")
 
 class CoachLink(Base):
@@ -87,13 +109,44 @@ class CoachLink(Base):
     coach: Mapped["User"] = relationship("User", foreign_keys=[coach_id], back_populates="coach_links")
     client: Mapped["User"] = relationship("User", foreign_keys=[client_id], back_populates="client_links")
 
+class CoachInvites(Base):
+    __tablename__ = "coachinvites"
+
+    coach_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    expires: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+class Session(Base):
+    __tablename__ = "sessions"
+    coach_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    date_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=datetime.now(), primary_key=True)
+    session_title: Mapped[str] = mapped_column(String(50), nullable=False)
+    session_desc: Mapped[str] = mapped_column(String(500), nullable=False)
+    session_duration: Mapped[int] = mapped_column(Integer, nullable=True)
+
+class CoachInfo(Base):
+    __tablename__ = "coach_info"
+    coach_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    description: Mapped[str] = mapped_column(String(200), nullable= True)
+    focus: Mapped[str] = mapped_column(String(200), nullable= True)
+    specialties: Mapped[str] = mapped_column(String(200), nullable= True)
+    notes: Mapped[str] = mapped_column(String(200), nullable= True)
+
+class CoachMessages(Base):
+    __tablename__="coach_messages"
+    user_1: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    user_2: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    time_sent: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
+    content: Mapped[str] = mapped_column(String(1000), nullable=False)
+
 class Biometric(Base):
     __tablename__ = "biometrics"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    biometric_type: Mapped[BiometricType] = mapped_column( Enum(BiometricType, values_callable=lambda x: [e.value for e in x]), nullable=False, index=True)
-    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=datetime.utcnow, index=True)
+    biometric_type: Mapped[BiometricType] = mapped_column( Enum(BiometricType, name = "biometricstype", values_callable=lambda x: [e.value for e in x]), nullable=False, index=True)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=datetime.now(), index=True)
     value_float: Mapped[float | None] = mapped_column(Float, nullable=True)
     value_int: Mapped[int | None] = mapped_column(Integer, nullable=True)
     start_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
